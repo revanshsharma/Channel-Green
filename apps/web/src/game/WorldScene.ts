@@ -97,6 +97,7 @@ export class WorldScene extends Phaser.Scene {
     });
     this.events.once('shutdown', () => this.cleanup());
     this.ready = true;
+    if (!this.pendingJoin && this.session.lastJoin) this.pendingJoin = this.session.lastJoin;
     if (this.pendingJoin) this.loadRoom(this.pendingJoin);
   }
 
@@ -108,7 +109,7 @@ export class WorldScene extends Phaser.Scene {
   private fit() {
     const w = this.scale.width;
     const h = this.scale.height;
-    this.zoomLevel = Math.max(2, Math.min(5, Math.floor(Math.min(w / 210, h / 150))));
+    this.zoomLevel = Math.max(2, Math.min(5, Math.floor(Math.min(w / 300, h / 190))));
     this.cameras.main.setZoom(this.zoomLevel);
     if (this.prompt) this.prompt.setResolution(this.zoomLevel * 2);
     for (const a of this.avatars.values()) {

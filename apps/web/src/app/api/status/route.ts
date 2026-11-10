@@ -13,7 +13,8 @@ export async function GET() {
     if (!res.ok) throw new Error('bad status');
     const h = (await res.json()) as { players?: number; rooms?: number; voice?: boolean };
     return NextResponse.json({ online: true, players: h.players ?? 0, voice: !!h.voice });
-  } catch {
+  } catch (err) {
+    if (process.env.NODE_ENV !== 'production') console.warn('status check failed', err);
     return NextResponse.json({ online: false, players: 0, voice: false });
   }
 }

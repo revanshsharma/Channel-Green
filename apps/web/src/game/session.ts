@@ -188,7 +188,11 @@ export class GameSession {
     this.wire(net);
   }
 
+  /** The room the player is in right now, so a scene that starts late (or restarts) can draw it. */
+  lastJoin: JoinOk | null = null;
+
   private applyJoin(j: JoinOk, first: boolean) {
+    this.lastJoin = j;
     this.me = j.me;
     this.clockOffset = j.serverNow - Date.now();
     this.players.clear();
