@@ -1,0 +1,38 @@
+{
+  "name": "@channel-green/web",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start -p 3000",
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "eslint src",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@channel-green/content": "*",
+    "@channel-green/shared": "*",
+    "@fontsource/jost": "^5.2.0",
+    "@fontsource/pixelify-sans": "^5.2.0",
+    "@fontsource/space-grotesk": "^5.2.0",
+    "@supabase/supabase-js": "^2.58.0",
+    "livekit-client": "^2.15.0",
+    "next": "^16.0.0",
+    "phaser": "3.90.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "socket.io-client": "^4.8.1",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.3.0",
+    "@tailwindcss/postcss": "^4.1.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "eslint": "^9.36.0",
+    "eslint-config-next": "^16.0.0",
+    "tailwindcss": "^4.1.0"
+  }
+}
