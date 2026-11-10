@@ -4,8 +4,13 @@
   "version": "0.1.0",
   "description": "Channel Green - a cozy open-source pixel-art social world by ZeroTheory.",
   "license": "MIT",
-  "engines": { "node": ">=20.9" },
-  "workspaces": ["apps/*", "packages/*"],
+  "engines": {
+    "node": ">=20.9"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "dev": "concurrently -n realtime,web -c green,yellow \"npm run dev -w @channel-green/realtime\" \"npm run dev -w @channel-green/web\"",
     "build": "npm run content:build && npm run build -w @channel-green/realtime && npm run build -w @channel-green/web",
@@ -15,8 +20,7 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
-    "e2e": "node e2e/two-clients.mjs",
-    "e2e:browser": "node e2e/browser.mjs"
+    "e2e": "npm run test -w @channel-green/realtime -- integration"
   },
   "devDependencies": {
     "concurrently": "^9.2.0",
