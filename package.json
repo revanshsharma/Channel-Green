@@ -1,0 +1,28 @@
+{
+  "name": "channel-green",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Channel Green - a cozy open-source pixel-art social world by ZeroTheory.",
+  "license": "MIT",
+  "engines": { "node": ">=20.9" },
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "dev": "concurrently -n realtime,web -c green,yellow \"npm run dev -w @channel-green/realtime\" \"npm run dev -w @channel-green/web\"",
+    "build": "npm run content:build && npm run build -w @channel-green/realtime && npm run build -w @channel-green/web",
+    "content:build": "tsx packages/content/scripts/build-registry.ts",
+    "content:preview": "tsx packages/content/scripts/preview.ts",
+    "content:check": "tsx packages/content/scripts/build-registry.ts --check",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "e2e": "node e2e/two-clients.mjs",
+    "e2e:browser": "node e2e/browser.mjs"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.0",
+    "typescript": "~5.9.3",
+    "vitest": "^3.2.4",
+    "tsx": "^4.20.0",
+    "@types/node": "^22.10.0"
+  }
+}
