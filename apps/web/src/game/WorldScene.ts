@@ -97,6 +97,17 @@ export class WorldScene extends Phaser.Scene {
     });
     this.events.once('shutdown', () => this.cleanup());
     this.ready = true;
+    if (process.env.NODE_ENV !== 'production') {
+      // development-only hook used by the browser test script; never present in a production build
+      (window as unknown as Record<string, unknown>).__cgDev = {
+        canStand: (x: number, y: number) => !!this.col && canStand(this.col, x, y),
+        size: () => ({ w: this.col?.width ?? 0, h: this.col?.height ?? 0 }),
+        pos: () => ({ x: this.myX, y: this.myY }),
+        portals: () => this.col?.portals.map((p) => ({ id: p.id, label: p.label, to: p.to, x: p.px.x + p.px.w / 2, y: p.px.y + p.px.h / 2 })) ?? [],
+        controls: this.controls,
+        session: this.session,
+      };
+    }
     if (!this.pendingJoin && this.session.lastJoin) this.pendingJoin = this.session.lastJoin;
     if (this.pendingJoin) this.loadRoom(this.pendingJoin);
   }
@@ -478,9 +489,15 @@ export class WorldScene extends Phaser.Scene {
 
   update(time: number, delta: number) {
     if (!this.ready || !this.map) return;
-    const dt = Math.min(delta, 60) / 1000;
-    this.stepMe(dt, time);
-    this.stepAvatars(time);
+    // Movement is integrated in fixed slices from real elapsed time, so speed does not depend on the frame rate
+    // (a slow phone covers the same distance per second as a fast desktop; the cap only stops a tab that was asleep from jumping).
+    let left = Math.min(delta, 250) / 1000;
+    while (left > 0) {
+      const slice = Math.min(left, 1 / 60);
+      this.stepMe(slice, time);
+      left -= slice;
+    }
+    this.stepAvatars(time, Math.min(delta, 250) / 1000);
     this.fx.forEach((f) => f(time, delta));
 
     // prompts: doors first, then things
@@ -565,7 +582,9 @@ export class WorldScene extends Phaser.Scene {
     }
   }
 
-  private stepAvatars(time: number) {
+  private stepAvatars(time: number, dt: number) {
+    // frame-rate independent easing toward the last server position (about 28% per frame at 60 fps)
+    const ease = 1 - Math.exp(-dt * 19.7);
     const myPid = this.session.me?.pid;
     for (const a of this.avatars.values()) {
       if (a.pid !== myPid) {
@@ -577,8 +596,8 @@ export class WorldScene extends Phaser.Scene {
             a.x = p.x;
             a.y = p.y;
           } else {
-            a.x += dx * 0.28;
-            a.y += dy * 0.28;
+            a.x += dx * ease;
+            a.y += dy * ease;
           }
           a.dir = p.dir;
           a.moving = (p.flags & FLAG_MOVING) !== 0 || Math.hypot(dx, dy) > 0.6;
