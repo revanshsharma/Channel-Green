@@ -100,12 +100,13 @@ export class Moderation {
     for (const [r, at] of m) if (t - at >= this.o.reportWindowMs) m.delete(r);
     m.set(reporter, t);
     this.reports.set(target, m);
-    const tripped = m.size >= this.o.reportLimit;
+    const distinct = m.size;
+    const tripped = distinct >= this.o.reportLimit;
     if (tripped) {
       m.clear();
       this.mute(target, this.o.reportMuteMs);
     }
-    return { distinct: m.size, tripped };
+    return { distinct, tripped };
   }
 
   sweep(): void {
