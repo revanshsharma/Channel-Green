@@ -124,6 +124,21 @@ describe('two clients', () => {
     b.s.close();
   });
 
+  it('hides both players from each other on block and shows them again on unblock', async () => {
+    const a = await client('Hazel');
+    const b = await client('Ivy');
+    const bSeesAGo = once<{ pid: string }>(b.s, 'player:leave', (v) => v.pid === a.joined.me.pid);
+    const aSeesBGo = once<{ pid: string }>(a.s, 'player:leave', (v) => v.pid === b.joined.me.pid);
+    expect((await emit(a.s, 'safety:block', { uid: b.joined.me.uid })).ok).toBe(true);
+    await Promise.all([bSeesAGo, aSeesBGo]);
+    const bSeesABack = once<PublicPlayer>(b.s, 'player:join', (v) => v.pid === a.joined.me.pid);
+    const aSeesBBack = once<PublicPlayer>(a.s, 'player:join', (v) => v.pid === b.joined.me.pid);
+    expect((await emit(a.s, 'safety:unblock', { uid: b.joined.me.uid })).ok).toBe(true);
+    await Promise.all([bSeesABack, aSeesBBack]);
+    a.s.close();
+    b.s.close();
+  });
+
   it('refuses a teleport and corrects the position', async () => {
     const a = await client('Elm');
     const fix = once<{ x: number; y: number }>(a.s, 'pos:correct');

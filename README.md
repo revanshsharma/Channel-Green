@@ -52,7 +52,7 @@ Safety is enforced on the server, not the browser: rate limits, word filtering, 
 ## Honest feature status
 
 Checked by running it (typecheck, lint, tests and a real browser session):
-- Install, typecheck, lint and tests passed before the latest pass; in the latest pass only the typecheck was confirmed on the build machine (see the roadmap). A fresh production build was not re-run.
+- Typecheck, lint, the content check and all automated tests (realtime, web and shared suites) passed in the latest pass. A fresh production build was not re-run.
 - Landing page, guest entry, avatar editor, walking in Town Square.
 - Two browser windows in the same room see each other, see each other move, and exchange chat messages.
 - The server health check and the site's "is the world awake" indicator.
@@ -60,11 +60,15 @@ Checked by running it (typecheck, lint, tests and a real browser session):
 
 Also clicked through in a real browser earlier: private rooms, Watch Together sync, the People panel, the Rooftop, the disabled voice panel, and frame-rate independent walking.
 
-Built and covered by automated tests, but not re-checked in a browser in the latest pass:
-- Confession wall, Listening Room sync, blocking and reporting, moderation tools. A two-window browser run of these was started but the test browser kept dropping out on the build machine, so it was not completed.
+Checked with two guest browsers in the latest pass (the test browser used the plain canvas fallback, no GPU):
+- Confession wall: posting anonymously, the post appearing live for the other player with no author, hearts, reporting, and the posting limit.
+- Listening Room: a tape picked by one player plays for the other, a pasted audio link plays in step on both, and pause carries over.
+- Mute hides that player's chat for you only. Block hides both players from each other (no frozen ghost left behind) and unblock brings them back. This found and fixed a real bug.
+
+Built and covered by automated tests only: moderation tools for guides, bans.
 
 Added in the latest pass and looked at in screenshots only (no automated checks):
-- The dusk look: per-room light and colour, vignette, grain and drifting dust, the warm landing page with cream typography and pool-water shimmer. Everything respects the reduced-motion setting.
+- The dusk look: per-room light and colour, vignette, grain (turned down in the latest pass and re-checked in Town Square, Rooftop and Rain Room) and drifting dust, the warm landing page with cream typography and pool-water shimmer. Everything respects the reduced-motion setting.
 - Touch controls (move pad, interact and chat buttons, phones only) and an accessibility pass (focus outlines, labels, Escape closes panels, skip link).
 
 Built but never run against the real service:
@@ -76,7 +80,8 @@ Known rough edges:
 - Portal labels no longer sit under the emote bar (the camera now leaves room), but this was only eyeballed on a few screen sizes.
 - Touch controls exist but have not been tried on a real phone.
 - Accessibility has had a second pass, not a full audit with a screen reader.
-- The grain can look strong on large grass areas; the colours and strengths are first guesses.
+- The grain was turned down after looking strong on large grass areas; the colours and strengths are still first guesses and were judged by eye.
+- The two-browser checks were run by a script kept outside this repository and are not part of the automated tests.
 
 ## Roadmap
 
@@ -87,7 +92,7 @@ Not done yet:
 - [ ] Browser end-to-end tests for panels beyond chat
 - [x] Touch controls for phones (first version, needs a real-phone test)
 - [ ] Full keyboard-only and screen-reader audit
-- [ ] Browser test of confession wall, Listening Room and block/mute with two players
+- [x] Browser test of confession wall, Listening Room and block/mute with two players (done by hand-run script; not yet automated in the repo)
 - [ ] Proper moderation dashboard for guides
 - [ ] More rooms, more avatar parts, community content packs
 - [ ] Persistent furniture placement for home rooms

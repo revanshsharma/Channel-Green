@@ -90,7 +90,7 @@ export class WorldScene extends Phaser.Scene {
     this.scale.on('resize', () => this.fit());
     this.fit();
     this.prompt = this.add.text(0, 0, '', { fontFamily: FONT, fontSize: '8px', color: '#faf5e8', backgroundColor: '#14301fcc', padding: { x: 3, y: 1 } }).setOrigin(0.5, 1).setDepth(99999).setVisible(false);
-    this.prompt.setResolution(this.zoomLevel * 2);
+    this.prompt.setResolution(this.textRes());
     this.unsub = this.session.onScene((e) => this.onEvent(e));
     this.controls.onAction = () => this.act();
     this.input.on('pointerdown', (p: Phaser.Input.Pointer, over: Obj[]) => {
@@ -115,6 +115,11 @@ export class WorldScene extends Phaser.Scene {
     if (this.pendingJoin) this.loadRoom(this.pendingJoin);
   }
 
+  /** Text is drawn sharper than the pixel grid. The plain canvas fallback (no WebGL) does not scale it back down, so keep it at 1 there. */
+  private textRes() {
+    return this.game.renderer.type === Phaser.CANVAS ? 1 : this.zoomLevel * 2;
+  }
+
   private cleanup() {
     this.unsub?.();
     this.controls.onAction = null;
@@ -135,11 +140,11 @@ export class WorldScene extends Phaser.Scene {
     this.zoomLevel = Math.max(2, Math.min(5, Math.floor(Math.min(w / 300, h / 190))));
     this.cameras.main.setZoom(this.zoomLevel);
     this.setCamBounds();
-    if (this.prompt) this.prompt.setResolution(this.zoomLevel * 2);
+    if (this.prompt) this.prompt.setResolution(this.textRes());
     for (const a of this.avatars.values()) {
-      a.name.setResolution(this.zoomLevel * 2);
-      a.bubble?.setResolution(this.zoomLevel * 2);
-      a.glyph?.setResolution(this.zoomLevel * 2);
+      a.name.setResolution(this.textRes());
+      a.bubble?.setResolution(this.textRes());
+      a.glyph?.setResolution(this.textRes());
     }
   }
 
@@ -246,7 +251,7 @@ export class WorldScene extends Phaser.Scene {
       const label = this.track(
         this.add.text(p.px.x + p.px.w / 2, p.px.y + p.px.h / 2, p.label, { fontFamily: FONT, fontSize: '7px', color: '#e8f7cf', stroke: '#0b1f15', strokeThickness: 2 }).setOrigin(0.5).setDepth(89000).setAlpha(0.85),
       );
-      label.setResolution(this.zoomLevel * 2);
+      label.setResolution(this.textRes());
     }
 
     this.myX = j.me.x;
@@ -507,7 +512,7 @@ export class WorldScene extends Phaser.Scene {
     const name = this.add
       .text(p.x, p.y - FRAME_H - 1, p.name, { fontFamily: FONT, fontSize: '7px', color: isMe ? '#9dff6a' : '#faf5e8', stroke: '#0b1f15', strokeThickness: 2 })
       .setOrigin(0.5, 1);
-    name.setResolution(this.zoomLevel * 2);
+    name.setResolution(this.textRes());
     this.roomObjs.push(sprite, name);
     this.avatars.set(p.pid, {
       pid: p.pid,
@@ -548,7 +553,7 @@ export class WorldScene extends Phaser.Scene {
       .text(a.x, a.y - FRAME_H - 9, short, { fontFamily: FONT, fontSize: '7px', color: '#2a1d1a', backgroundColor: '#faf5e8', padding: { x: 3, y: 2 }, wordWrap: { width: 96 }, align: 'center' })
       .setOrigin(0.5, 1)
       .setDepth(95000);
-    a.bubble.setResolution(this.zoomLevel * 2);
+    a.bubble.setResolution(this.textRes());
     a.bubbleUntil = this.time.now + 4500 + short.length * 40;
   }
 
@@ -557,7 +562,7 @@ export class WorldScene extends Phaser.Scene {
     if (!a) return;
     a.glyph?.destroy();
     a.glyph = this.add.text(a.x, a.y - FRAME_H - 4, glyph, { fontFamily: FONT, fontSize: '12px' }).setOrigin(0.5, 1).setDepth(95001);
-    a.glyph.setResolution(this.zoomLevel * 2);
+    a.glyph.setResolution(this.textRes());
     a.glyphUntil = this.time.now + 2200;
   }
 
