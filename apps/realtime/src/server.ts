@@ -223,6 +223,21 @@ export function createRealtime(cfg: Config, overrides: { store?: Store; voice?: 
   const toVisible = <K extends keyof ServerToClient>(inst: Instance, from: Player, ev: K, ...args: Parameters<ServerToClient[K]>) => {
     for (const p of inst.players.values()) if (p === from || !hides(from, p)) send(p.sid, ev, ...args);
   };
+  /** After a block or unblock, make both screens match: neither side keeps a frozen copy of the other, and both see each other again once nobody blocks. */
+  const syncVisibility = (p: Player, otherUid: string) => {
+    const inst = p.instance as Instance | undefined;
+    if (!inst) return;
+    for (const o of inst.players.values()) {
+      if (o === p || o.uid !== otherUid) continue;
+      if (hides(p, o)) {
+        send(p.sid, 'player:leave', { pid: o.pid });
+        send(o.sid, 'player:leave', { pid: p.pid });
+      } else {
+        send(p.sid, 'player:join', inst.publicPlayer(o));
+        send(o.sid, 'player:join', inst.publicPlayer(p));
+      }
+    }
+  };
   const notice = (p: Player, text: string, level: 'info' | 'warn' = 'info') => send(p.sid, 'notice', { level, text });
   const canModerate = (p: Player, inst: Instance) => p.moderator || inst.hostPid === p.pid;
 
@@ -695,11 +710,13 @@ export function createRealtime(cfg: Config, overrides: { store?: Store; voice?: 
       if (d.uid === p.uid) return ack(fail('That is you.'));
       if (p.blocks.size >= LIMITS.blocksMax) return ack(fail('Your block list is full.'));
       p.blocks.add(d.uid);
+      syncVisibility(p, d.uid);
       await store.addBlock(p.uid, d.uid).catch(() => {});
       ack({ ok: true });
     });
     on(socket, 'safety:unblock', BlockSchema, 'any', async (p, d, ack) => {
       p.blocks.delete(d.uid);
+      syncVisibility(p, d.uid);
       await store.removeBlock(p.uid, d.uid).catch(() => {});
       ack({ ok: true });
     });
@@ -732,6 +749,7 @@ export function createRealtime(cfg: Config, overrides: { store?: Store; voice?: 
         context: [...(inst.recent.get(target.uid) ?? [])],
       });
       p.blocks.add(target.uid);
+      syncVisibility(p, target.uid);
       store.addBlock(p.uid, target.uid).catch(() => {});
       const r = mod.report(target.uid, p.uid);
       if (r.tripped) {

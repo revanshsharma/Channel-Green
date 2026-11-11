@@ -443,7 +443,7 @@ export class GameSession {
     saveProfile(this.profile);
     this.set({ blocks });
     await this.act('safety:unblock', { uid });
-    this.toast('Unblocked. They will show up again when you next enter a room.', 'info');
+    this.toast('Unblocked. You can see each other again.', 'info');
   }
   /** Mute only hides someone for this visit, on your screen. */
   mute(uid: string, on: boolean) {
