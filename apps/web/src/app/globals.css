@@ -214,6 +214,42 @@ canvas.pixelated {
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 0.93  0 0 0 0 0.8  0 0 0 1.1 -0.2'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
   animation: grain 0.9s steps(1) infinite;
 }
+/* seated: the room warms and closes in a little, slowly */
+.mood-glow {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 2.4s ease-in-out;
+  background:
+    radial-gradient(ellipse at 50% 58%, rgba(255, 170, 110, 0.16), transparent 62%),
+    radial-gradient(ellipse at 50% 50%, transparent 46%, rgba(40, 14, 8, 0.28) 100%);
+}
+.mood[data-seated='true'] .mood-glow {
+  opacity: 1;
+}
+.mood-grain {
+  transition: opacity 2.4s ease-in-out;
+}
+.mood[data-seated='true'] .mood-grain {
+  opacity: calc(var(--mood-grain) * 0.075);
+}
+.mood-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 17%;
+  text-align: center;
+  font-family: var(--font-pixel, inherit);
+  font-size: 0.8rem;
+  letter-spacing: 0.14em;
+  color: rgba(255, 226, 196, 0.82);
+  text-shadow: 0 1px 8px rgba(40, 14, 8, 0.7);
+  opacity: 0;
+  transition: opacity 2.8s ease-in-out;
+}
+.mood-line[data-on='true'] {
+  opacity: 0.85;
+}
 @keyframes mood-in {
   from {
     opacity: 0;
@@ -379,6 +415,17 @@ button:focus-visible {
   }
   .mood {
     animation: none !important;
+  }
+  /* no fades or extra grain; the seated warmth stays as a still, gentler wash */
+  .mood-glow,
+  .mood-line {
+    transition: none !important;
+  }
+  .mood[data-seated='true'] .mood-glow {
+    opacity: 0.6;
+  }
+  .mood[data-seated='true'] .mood-grain {
+    opacity: calc(var(--mood-grain) * 0.05);
   }
 }
 

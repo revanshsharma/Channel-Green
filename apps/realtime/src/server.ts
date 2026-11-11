@@ -14,6 +14,7 @@ import {
   EmoteSendSchema,
   FLAG_MOVING,
   FLAG_SEATED,
+  seatPoint,
   InteractSchema,
   JoinSchema,
   LIMITS,
@@ -626,10 +627,7 @@ export function createRealtime(cfg: Config, overrides: { store?: Store; voice?: 
           result = { kind: 'panel', panel: it.panel };
           break;
         case 'sit': {
-          const fp = def.footprint;
-          const r = fp ? { x: box.x + fp[0], y: box.y + fp[1], w: fp[2], h: fp[3] } : box;
-          const sx = Math.min(Math.max(p.x, r.x + 4), r.x + r.w - 4);
-          const sy = r.y + r.h - 2;
+          const { x: sx, y: sy } = seatPoint(def, placement.at, p.x);
           for (const o of inst.players.values()) if (o !== p && (o.flags & FLAG_SEATED) && Math.hypot(o.x - sx, o.y - sy) < 9) return ack(fail('Someone is already sitting there.'));
           p.x = sx;
           p.y = sy;

@@ -49,7 +49,9 @@ export interface Snapshot {
   blocks: string[];
   muted: string[];
   note: { title: string; text: string } | null;
-  nearby: { label: string; kind: 'object' | 'portal' } | null;
+  nearby: { label: string; kind: 'object' | 'portal' | 'sit' | 'stand' } | null;
+  /** true while you are settled in a seat; drives the quiet seated atmosphere */
+  seated: boolean;
   selected: string | null;
 }
 
@@ -106,6 +108,7 @@ export class GameSession {
       muted: [],
       note: null,
       nearby: null,
+      seated: false,
       selected: null,
     };
   }
@@ -218,6 +221,7 @@ export class GameSession {
       moderator: j.moderator,
       note: null,
       nearby: null,
+      seated: false,
       selected: null,
     });
     this.refreshPlayers();
@@ -360,6 +364,9 @@ export class GameSession {
     const cur = this.snap.nearby;
     if (cur?.label === n?.label && cur?.kind === n?.kind) return;
     this.set({ nearby: n });
+  }
+  setSeated(v: boolean) {
+    if (this.snap.seated !== v) this.set({ seated: v });
   }
   select(pid: string | null) {
     this.set({ selected: pid, panel: pid ? 'people' : this.snap.panel });

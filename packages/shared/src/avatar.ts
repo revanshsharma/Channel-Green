@@ -33,7 +33,9 @@ export const SPRITE_H = 28;
 /** Frames include a 1px outline on every side. */
 export const FRAME_W = SPRITE_W + 2;
 export const FRAME_H = SPRITE_H + 2;
-export const FRAME_NAMES = ['idle0', 'idle1', 'walk0', 'walk1', 'walk2', 'walk3'] as const;
+/** idle and walk come first (the avatar editor and the landing scene read the first columns); sit0..sit3 are the seated pictures:
+ * resting, breathing in, eyes closed, head tilted. */
+export const FRAME_NAMES = ['idle0', 'idle1', 'walk0', 'walk1', 'walk2', 'walk3', 'sit0', 'sit1', 'sit2', 'sit3'] as const;
 export type FrameName = (typeof FRAME_NAMES)[number];
 
 const OPTIONAL_SLOTS: AvatarSlot[] = ['hair', 'hat', 'face', 'neck'];
@@ -141,6 +143,12 @@ interface FramePose {
   /** -1 left leg lifted, 1 right leg lifted, 0 flat (down/up views); for side view: stride -1..1 */
   stride: number;
   armSwing: number;
+  /** seated: knees bent, body lowered */
+  sit?: boolean;
+  /** eyes closed */
+  blink?: boolean;
+  /** head leans this many pixels sideways */
+  tilt?: number;
 }
 
 const POSES: Record<FrameName, FramePose> = {
@@ -150,6 +158,10 @@ const POSES: Record<FrameName, FramePose> = {
   walk1: { bob: 0, stride: 0, armSwing: 0 },
   walk2: { bob: 1, stride: 1, armSwing: 1 },
   walk3: { bob: 0, stride: 0, armSwing: 0 },
+  sit0: { bob: 0, stride: 0, armSwing: 0, sit: true },
+  sit1: { bob: -1, stride: 0, armSwing: 0, sit: true },
+  sit2: { bob: 0, stride: 0, armSwing: 0, sit: true, blink: true },
+  sit3: { bob: 0, stride: 0, armSwing: 0, sit: true, tilt: 1 },
 };
 
 function renderView(cfg: AvatarConfig, reg: AvatarRegistry, view: View, pose: FramePose): PixelBuffer {
@@ -166,8 +178,11 @@ function renderView(cfg: AvatarConfig, reg: AvatarRegistry, view: View, pose: Fr
   const neckC = swatchColors(reg.clothColors, cfg.neckColor);
   const base: Palette = { S: skin.main, s: skin.shade, H: hairC.main, h: hairC.shade };
 
-  const legsTop = SPRITE_H - L;
-  const torsoTop = legsTop - 7 + pose.bob;
+  const sit = !!pose.sit;
+  const sideSit = sit && view === 'side';
+  const legsTop = sit ? SPRITE_H - (sideSit ? 4 : 3) : SPRITE_H - L;
+  const torsoTop = sit ? legsTop - (sideSit ? 7 : 5) + pose.bob : legsTop - 7 + pose.bob;
+  const tilt = pose.tilt ?? 0;
   const headTop = torsoTop - 9;
   const originHead = headTop - 4;
   const torsoX = view === 'side' ? 5 : Math.floor((SPRITE_W - T) / 2);
@@ -185,18 +200,30 @@ function renderView(cfg: AvatarConfig, reg: AvatarRegistry, view: View, pose: Fr
   const coverage = bottom?.coverage ?? 1;
   const shoeH = shoes?.height ?? 2;
   const drawLeg = (x: number, w: number, lift: number) => {
-    const len = L - lift;
+    const len = sit ? (sideSit ? 4 : 3) : L - lift;
     for (let j = 0; j < len; j++) {
       const y = legsTop + j;
-      const fromBottom = L - lift - j;
+      const fromBottom = len - j;
       let col: string;
       if (fromBottom <= shoeH && shoes && shoes.id !== 'barefoot') col = shoeRes(j === len - 1 && shoes.sole ? shoes.sole : 'C');
-      else col = j < Math.round(L * coverage) ? bottomRes('C') : skin.main;
+      else col = sit ? (coverage > 0.35 ? bottomRes('C') : skin.main) : j < Math.round(L * coverage) ? bottomRes('C') : skin.main;
       buf.rect(x, y, w, 1, col);
     }
     if (len > 1) buf.rect(x + w - 1, legsTop, 1, Math.max(0, len - shoeH), j2(bottomRes, skin, coverage, L));
   };
-  if (view === 'side') {
+  // seated: the thigh runs forward from the hip (side view); from the front the knees are drawn after the torso
+  if (sideSit) {
+    const thigh = coverage > 0.35 ? botC.main : skin.main;
+    buf.rect(2, torsoTop + 4, 8, 3, thigh);
+    buf.rect(2, torsoTop + 6, 8, 1, coverage > 0.35 ? botC.shade : skin.shade);
+    drawLeg(2, 3, 0);
+  } else if (sit) {
+    // legs for the front view are drawn later, over the torso; the back view hides them behind it
+    if (view === 'up') {
+      drawLeg(4, 3, 0);
+      drawLeg(9, 3, 0);
+    }
+  } else if (view === 'side') {
     if (pose.stride === 0) {
       drawLeg(6, 4, 0);
     } else {
@@ -236,6 +263,12 @@ function renderView(cfg: AvatarConfig, reg: AvatarRegistry, view: View, pose: Fr
     drawArm(swingX, torsoTop + 1, 2);
   }
 
+  // seated, front view: the knees come forward over the lap
+  if (sit && view === 'down') {
+    drawLeg(4, 3, 0);
+    drawLeg(9, 3, 0);
+  }
+
   // bottom flare (skirt)
   if (bottom?.flare) {
     buf.rect(torsoX - 1, torsoTop + 6, torsoW + 2, 3, botC.main);
@@ -243,31 +276,33 @@ function renderView(cfg: AvatarConfig, reg: AvatarRegistry, view: View, pose: Fr
   }
 
   // head
-  const hx = 3;
+  const hx = 3 + tilt;
   const headRows: [number, number][] = [[1, 8], [0, 10], [0, 10], [0, 10], [0, 10], [0, 10], [0, 10], [0, 10], [1, 8]];
   headRows.forEach(([off, w], j) => buf.rect(hx + off, headTop + j, w, 1, j === 8 ? skin.shade : skin.main));
   if (view === 'down') {
-    buf.rect(5, headTop + 5, 1, 2, FIXED.K);
-    buf.rect(10, headTop + 5, 1, 2, FIXED.K);
+    const eyeH = pose.blink ? 1 : 2;
+    const eyeY = headTop + (pose.blink ? 6 : 5);
+    buf.rect(5 + tilt, eyeY, 1, eyeH, FIXED.K);
+    buf.rect(10 + tilt, eyeY, 1, eyeH, FIXED.K);
     const blush = mix(skin.main, FIXED.B, 0.55);
-    buf.set(4, headTop + 7, blush);
-    buf.set(11, headTop + 7, blush);
+    buf.set(4 + tilt, headTop + 7, blush);
+    buf.set(11 + tilt, headTop + 7, blush);
   } else if (view === 'side') {
-    buf.set(2, headTop + 5, skin.main);
-    buf.set(2, headTop + 6, skin.shade);
-    buf.rect(4, headTop + 5, 1, 2, FIXED.K);
-    buf.set(5, headTop + 7, mix(skin.main, FIXED.B, 0.55));
+    buf.set(2 + tilt, headTop + 5, skin.main);
+    buf.set(2 + tilt, headTop + 6, skin.shade);
+    buf.rect(4 + tilt, headTop + (pose.blink ? 6 : 5), 1, pose.blink ? 1 : 2, FIXED.K);
+    buf.set(5 + tilt, headTop + 7, mix(skin.main, FIXED.B, 0.55));
   }
 
   // neck, hair, face, hat
   const neck = partOf(reg, cfg.neck);
-  if (neck) drawArt(buf, neck.views?.[view], 0, originHead, resolver(base, neckC.main, neckC.shade));
+  if (neck) drawArt(buf, neck.views?.[view], tilt, originHead, resolver(base, neckC.main, neckC.shade));
   const hat = partOf(reg, cfg.hat);
   const hair = partOf(reg, cfg.hair);
-  if (hair && !(hat?.hidesHair)) drawArt(buf, hair.views?.[view], 0, originHead, resolver(base, hairC.main, hairC.shade));
+  if (hair && !(hat?.hidesHair)) drawArt(buf, hair.views?.[view], tilt, originHead, resolver(base, hairC.main, hairC.shade));
   const face = partOf(reg, cfg.face);
-  if (face && view !== 'up') drawArt(buf, face.views?.[view], 0, originHead, resolver(base, '#2a1d1a', '#000000'));
-  if (hat) drawArt(buf, hat.views?.[view], 0, originHead, resolver(base, hatC.main, hatC.shade));
+  if (face && view !== 'up') drawArt(buf, face.views?.[view], tilt, originHead, resolver(base, '#2a1d1a', '#000000'));
+  if (hat) drawArt(buf, hat.views?.[view], tilt, originHead, resolver(base, hatC.main, hatC.shade));
   return buf;
 }
 
@@ -283,7 +318,7 @@ function partOf(reg: AvatarRegistry, id: string): AvatarPart | undefined {
 
 export type AvatarFrames = Record<`${Direction}-${FrameName}`, PixelBuffer>;
 
-/** Renders all 24 frames (4 directions x 6 poses) of an avatar, each with a dark outline. */
+/** Renders every frame (4 directions x 10 poses) of an avatar, each with a dark outline. */
 export function renderAvatarFrames(input: unknown, reg: AvatarRegistry): AvatarFrames {
   const cfg = sanitizeAvatar(input, reg);
   const out = {} as AvatarFrames;

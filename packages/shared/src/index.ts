@@ -5,5 +5,6 @@ export * from './worldart';
 export * from './geometry';
 export * from './text';
 export * from './media';
+export * from './seat';
 export * from './protocol';
 export * from './tokens';

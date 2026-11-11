@@ -191,7 +191,7 @@ export function Hud({ controls }: { controls: Controls }) {
         </div>
         <div className="pointer-events-auto flex max-w-full flex-col items-center gap-1">
           {s.nearby && (
-            <button className="btn btn-primary" onClick={() => controls.trigger()}>
+            <button className={`btn ${s.nearby.kind === 'stand' ? 'btn-quiet' : 'btn-primary'}`} onClick={() => controls.trigger()}>
               {s.nearby.label} <span className="hidden text-xs opacity-70 sm:inline">[E]</span>
             </button>
           )}
@@ -224,7 +224,7 @@ export function Hud({ controls }: { controls: Controls }) {
                 aria-label={s.nearby ? s.nearby.label : 'Interact'}
                 onClick={() => controls.trigger()}
               >
-                {s.nearby ? 'Go' : 'E'}
+                {s.nearby?.kind === 'sit' ? 'Sit' : s.nearby?.kind === 'stand' ? 'Up' : s.nearby ? 'Go' : 'E'}
               </button>
             </div>
           </div>

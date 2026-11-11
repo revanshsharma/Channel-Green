@@ -73,6 +73,13 @@ Added in the latest pass and looked at in screenshots only (no automated checks)
 - The dusk look: per-room light and colour, vignette, grain (turned down in the latest pass and re-checked in Town Square, Rooftop and Rain Room) and drifting dust, the warm landing page with cream typography and pool-water shimmer. Everything respects the reduced-motion setting.
 - Touch controls (move pad, interact and chat buttons, phones only) and an accessibility pass (focus outlines, labels, Escape closes panels, skip link).
 
+Sitting, reworked in the latest pass and checked with two real Chromium windows (software rendering, no GPU) plus a touch window with reduced motion on:
+- Sitting is a short walk onto the seat and a slow settle into a seated picture, not a teleport. The sitter faces the way the furniture faces and is drawn on the seat, behind a backrest that faces the room. The seated picture breathes, blinks now and then and tilts its head a little. Getting up eases out and no longer hops.
+- A quiet "Stand up" prompt shows while seated (E, or the touch button which reads Sit, then Up). Moving also gets you up. The other player sees the sit and the stand in the same way.
+- While you sit, the room warms slightly, a soft glow sits under you, a few warm specks drift up, the grain deepens a touch, and after a few seconds one lowercase line fades in and out. Reduced motion gets an instant seat, one still picture, a still gentle warmth and no specks or fades. No sound is added.
+- Checked by script: the prompt text, the glide having no jump, landing on the seat, the other window seeing the seated state, getting up with E, with movement and with touch, and the reduced-motion behaviour. Unit tests cover the seat finder, layering, easing and the seated pictures.
+- Not checked: a real phone, a real GPU (the glow and specks were judged on software rendering), other browsers, every piece of furniture by eye (only the Town Square bench was looked at in screenshots; the seat logic is tested for all of them), and how the mood feels to someone else.
+
 Voice and video, checked with two real Chromium windows against a local LiveKit server in dev mode and fake microphone and camera devices (the repeatable script is `scripts/voice-e2e.mjs`, setup in docs/VOICE.md). All of it passed in the latest run:
 - Nothing asks for the microphone or camera until you press its own button; joining is listen-only and needs a consent tick first.
 - Mic and camera turn on and off with one click, the devices are really released when off, and the other player sees who is speaking, who has the mic on and who has a camera on (and the video is decoding).

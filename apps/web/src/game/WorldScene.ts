@@ -8,6 +8,12 @@ import {
   DIRECTIONS,
   PLAYER_SPEED,
   TILE,
+  approach,
+  findSeat,
+  seatedDepth,
+  seatedFrame,
+  smoothstep,
+  type SeatInfo,
   buildCollisionMap,
   canStand,
   portalAt,
@@ -40,6 +46,12 @@ interface Avatar {
   y: number;
   moving: boolean;
   seated: boolean;
+  /** 0 standing .. 1 settled in the seat; eased into a pose with smoothstep */
+  sitK: number;
+  seat: SeatInfo | null;
+  glow?: Phaser.GameObjects.Image;
+  /** keeps neighbours from breathing in step */
+  phase: number;
   dir: Direction;
   texKey: string;
   role: PublicPlayer['role'];
@@ -47,6 +59,19 @@ interface Avatar {
 
 const FONT = '"Pixelify Sans", "Jost", system-ui, sans-serif';
 const REACH = 26;
+/** seconds to settle into a seat and to get up again */
+const SIT_IN = 0.6;
+const SIT_OUT = 0.4;
+/** pixels the sprite settles into the cushion once seated */
+const SIT_SINK = 1;
+const GLIDE_SPEED = PLAYER_SPEED * 0.55;
+const SEAT_PETALS = ['#ffc9a3', '#f3e3b3', '#cdb8ea', '#ff9a6a'];
+
+function travelDir(dx: number, dy: number, fallback: Direction): Direction {
+  if (Math.hypot(dx, dy) < 0.5) return fallback;
+  if (Math.abs(dx) >= Math.abs(dy)) return dx > 0 ? 'right' : 'left';
+  return dy > 0 ? 'down' : 'up';
+}
 
 export class WorldScene extends Phaser.Scene {
   private session!: GameSession;
@@ -60,6 +85,13 @@ export class WorldScene extends Phaser.Scene {
   private myDir: Direction = 'down';
   private moving = false;
   private seated = false;
+  /** where we are still walking to (the server already has us on the seat) */
+  private seatGlide: { x: number; y: number; dir: Direction } | null = null;
+  /** a small leftover offset that melts away so getting up does not hop */
+  private offX = 0;
+  private offY = 0;
+  private mySitK = 0;
+  private seatPetals: { r: Phaser.GameObjects.Rectangle; age: number; life: number; ox: number; ph: number }[] = [];
   private lastSend = 0;
   private lastSentMoving = false;
   private seq = 0;
@@ -185,12 +217,18 @@ export class WorldScene extends Phaser.Scene {
         this.myX = e.x;
         this.myY = e.y;
         this.seated = false;
+        this.seatGlide = null;
+        this.session.setSeated(false);
         break;
       case 'seat':
-        this.myX = e.x;
-        this.myY = e.y;
-        this.myDir = e.dir;
         this.seated = true;
+        if (this.reduce || Math.hypot(e.x - this.myX, e.y - this.myY) < 0.5) {
+          this.myX = e.x;
+          this.myY = e.y;
+          this.myDir = e.dir;
+          this.seatGlide = null;
+          this.session.setSeated(true);
+        } else this.seatGlide = { x: e.x, y: e.y, dir: e.dir };
         break;
     }
   }
@@ -199,6 +237,7 @@ export class WorldScene extends Phaser.Scene {
 
   private clearRoom() {
     this.tweens.killAll();
+    this.seatPetals = [];
     this.roomObjs.forEach((o) => o.destroy());
     this.roomObjs = [];
     this.avatars.forEach((a) => this.destroyAvatar(a));
@@ -243,6 +282,7 @@ export class WorldScene extends Phaser.Scene {
     this.applyMood(map.id, mood, w, h);
     for (const e of map.effects) if (!mood.skipEffects?.includes(e.type)) this.addEffect(e.type, e.count ?? 20, e.color);
     this.addMotes(mood, w, h);
+    this.addSeatPetals();
 
     // portal glow so doors can be found
     for (const p of this.col.portals) {
@@ -258,6 +298,10 @@ export class WorldScene extends Phaser.Scene {
     this.myY = j.me.y;
     this.myDir = j.me.dir;
     this.seated = (j.me.flags & FLAG_SEATED) !== 0;
+    this.seatGlide = null;
+    this.offX = this.offY = 0;
+    this.mySitK = 0;
+    this.session.setSeated(this.seated);
     this.moving = false;
     this.portalLock = this.time.now + 1600;
     this.portalSince = 0;
@@ -486,6 +530,36 @@ export class WorldScene extends Phaser.Scene {
     }
   }
 
+  /** A few warm specks that drift up around you while you sit. Not made at all when motion is reduced. */
+  private addSeatPetals() {
+    this.seatPetals = [];
+    if (this.reduce) return;
+    for (let i = 0; i < 12; i++) {
+      const col = Phaser.Display.Color.HexStringToColor(SEAT_PETALS[i % SEAT_PETALS.length]).color;
+      const r = this.track(this.add.rectangle(0, 0, i % 3 === 0 ? 1 : 2, i % 3 === 0 ? 1 : 2, col, 0).setDepth(90005).setVisible(false));
+      this.seatPetals.push({ r, age: Math.random(), life: 1, ox: (Math.random() - 0.5) * 70, ph: Math.random() * 10 });
+    }
+    this.fx.push((t, dt) => {
+      const me = this.session.me && this.avatars.get(this.session.me.pid);
+      const k = this.mySitK;
+      for (const p of this.seatPetals) {
+        if (!me || k <= 0.02) {
+          p.r.setVisible(false);
+          continue;
+        }
+        p.age += (dt / 1000) / (9 + (p.ph % 4));
+        if (p.age >= 1) {
+          p.age = 0;
+          p.ox = (Math.random() - 0.5) * 70;
+        }
+        const rise = p.age * 46;
+        p.r.setVisible(true);
+        p.r.setPosition(me.x + p.ox + Math.sin(t / 1700 + p.ph) * 4, me.y - 4 - rise);
+        p.r.setAlpha(Math.sin(Math.PI * p.age) * 0.5 * k);
+      }
+    });
+  }
+
   // ------------------------------------------------------------------ avatars
 
   /** One texture per distinct look; frames are named like "down-walk2". */
@@ -523,7 +597,10 @@ export class WorldScene extends Phaser.Scene {
       x: p.x,
       y: p.y,
       moving: false,
-      seated: false,
+      seated: (p.flags & FLAG_SEATED) !== 0,
+      sitK: (p.flags & FLAG_SEATED) !== 0 ? 1 : 0,
+      seat: (p.flags & FLAG_SEATED) !== 0 ? findSeat(this.map, registry.furniture, p.x, p.y) : null,
+      phase: hashString(p.pid) % 9000,
       dir: p.dir,
       texKey,
       role: p.role,
@@ -535,6 +612,7 @@ export class WorldScene extends Phaser.Scene {
     a.name.destroy();
     a.bubble?.destroy();
     a.glyph?.destroy();
+    a.glow?.destroy();
   }
 
   private removeAvatar(pid: string) {
@@ -568,10 +646,11 @@ export class WorldScene extends Phaser.Scene {
 
   // ------------------------------------------------------------------ interaction
 
-  private nearestObject(): { index: number; label: string } | null {
+  private nearestObject(): { index: number; label: string; sit: boolean } | null {
     let best = -1;
     let bestD = REACH;
     let label = '';
+    let sit = false;
     this.map.objects.forEach((o, i) => {
       const def = registry.furniture[o.furniture];
       if (!def?.interaction) return;
@@ -583,16 +662,26 @@ export class WorldScene extends Phaser.Scene {
       if (d < bestD) {
         bestD = d;
         best = i;
-        label = o.label ?? def.prompt ?? (def.interaction.kind === 'sit' ? 'Sit' : def.name);
+        sit = def.interaction.kind === 'sit';
+        label = o.label ?? def.prompt ?? (sit ? 'Sit' : def.name);
       }
     });
-    return best >= 0 ? { index: best, label } : null;
+    return best >= 0 ? { index: best, label, sit } : null;
   }
 
   act() {
     if (!this.ready || !this.map) return;
+    if (this.seated) {
+      if (!this.seatGlide) this.standUp(...this.facingVector());
+      return;
+    }
     if (this.nearPortal) void this.session.usePortal(this.nearPortal);
     else if (this.nearIndex >= 0) void this.session.interact(this.nearIndex);
+  }
+
+  /** The way you are looking, as a step; getting up goes that way first. */
+  private facingVector(): [number, number] {
+    return this.myDir === 'left' ? [-1, 0] : this.myDir === 'right' ? [1, 0] : this.myDir === 'up' ? [0, -1] : [0, 1];
   }
 
   /** Called from the on-screen action button. */
@@ -617,14 +706,18 @@ export class WorldScene extends Phaser.Scene {
 
     // prompts: doors first, then things
     const portal = portalAt(this.col, this.myX, this.myY);
-    const near = this.nearestObject();
+    const near = this.seated ? null : this.nearestObject();
     this.nearIndex = near?.index ?? -1;
     const pad = this.col.portals.find((p) => Math.hypot(p.px.x + p.px.w / 2 - this.myX, p.px.y + p.px.h / 2 - this.myY) < 22);
     this.nearPortal = pad?.id ?? '';
-    const label = pad ? `Go to ${pad.label}` : near?.label ?? '';
-    this.session.setNearby(label ? { label, kind: pad ? 'portal' : 'object' } : null);
+    const standing = this.seated && !this.seatGlide && this.mySitK >= 1;
+    const label = standing ? 'Stand up' : this.seated ? '' : pad ? `Go to ${pad.label}` : near?.label ?? '';
+    const kind = standing ? 'stand' : pad ? 'portal' : near?.sit ? 'sit' : 'object';
+    this.session.setNearby(label ? { label, kind } : null);
     if (label) {
-      this.prompt.setText(`E  ${label}`).setPosition(this.myX, this.myY - FRAME_H - 14).setVisible(true);
+      const lift = this.seated ? 8 : 14;
+      this.prompt.setText(`E  ${label}`).setPosition(Math.round(this.myX + this.offX), Math.round(this.myY + this.offY) - FRAME_H - lift).setVisible(true);
+      this.prompt.setAlpha(this.seated ? 0.7 : 1);
     } else this.prompt.setVisible(false);
 
     // stepping onto a door walks through it
@@ -643,6 +736,37 @@ export class WorldScene extends Phaser.Scene {
     let dx = v.x;
     let dy = v.y;
     const wants = dx !== 0 || dy !== 0;
+    if (this.seatGlide) {
+      if (wants) {
+        // you changed your mind on the way: land on the seat and get up from there
+        this.myX = this.seatGlide.x;
+        this.myY = this.seatGlide.y;
+        this.myDir = this.seatGlide.dir;
+        this.seatGlide = null;
+        this.session.setSeated(true);
+      } else {
+        const g = this.seatGlide;
+        const gx = g.x - this.myX;
+        const gy = g.y - this.myY;
+        const dist = Math.hypot(gx, gy);
+        const step = GLIDE_SPEED * dt;
+        if (dist <= step) {
+          this.myX = g.x;
+          this.myY = g.y;
+          this.myDir = g.dir;
+          this.seatGlide = null;
+          this.moving = false;
+          this.session.setSeated(true);
+        } else {
+          this.myX += (gx / dist) * step;
+          this.myY += (gy / dist) * step;
+          this.myDir = travelDir(gx, gy, this.myDir);
+          this.moving = true;
+        }
+        this.syncMe();
+        return;
+      }
+    }
     if (this.seated && wants) this.standUp(dx, dy);
     if (!this.seated && wants) {
       const len = Math.hypot(dx, dy) || 1;
@@ -668,17 +792,28 @@ export class WorldScene extends Phaser.Scene {
       this.lastSentMoving = this.moving;
       this.session.move(this.myX, this.myY, this.myDir, this.moving, ++this.seq);
     }
+    this.syncMe();
+  }
+
+  private syncMe() {
     const me = this.session.me;
-    if (me) {
-      const a = this.avatars.get(me.pid);
-      if (a) {
-        a.x = this.myX;
-        a.y = this.myY;
-        a.dir = this.myDir;
-        a.moving = this.moving;
-        a.seated = this.seated;
-      }
+    if (!me) return;
+    const a = this.avatars.get(me.pid);
+    if (!a) return;
+    // the little offset left over from getting up melts away instead of hopping
+    if (this.reduce) this.offX = this.offY = 0;
+    else {
+      const f = Math.exp(-(1 / 60) * 9);
+      this.offX *= f;
+      this.offY *= f;
+      if (Math.hypot(this.offX, this.offY) < 0.3) this.offX = this.offY = 0;
     }
+    const sliding = Math.hypot(this.offX, this.offY) > 1.2;
+    a.x = this.myX + this.offX;
+    a.y = this.myY + this.offY;
+    a.dir = this.myDir;
+    a.moving = this.moving || sliding;
+    a.seated = this.seated;
   }
 
   private standUp(dx: number, dy: number) {
@@ -690,7 +825,10 @@ export class WorldScene extends Phaser.Scene {
       if ((ox || oy) && canStand(this.col, this.myX + ox, this.myY + oy)) {
         this.myX += ox;
         this.myY += oy;
+        this.offX = -ox;
+        this.offY = -oy;
         this.seated = false;
+        this.session.setSeated(false);
         this.session.move(this.myX, this.myY, this.myDir, false, ++this.seq);
         return;
       }
@@ -702,31 +840,76 @@ export class WorldScene extends Phaser.Scene {
     const ease = 1 - Math.exp(-dt * 19.7);
     const myPid = this.session.me?.pid;
     for (const a of this.avatars.values()) {
-      if (a.pid !== myPid) {
+      const mine = a.pid === myPid;
+      let gliding = mine && !!this.seatGlide;
+      if (!mine) {
         const p = this.session.players.get(a.pid);
         if (p) {
+          const seatedNow = (p.flags & FLAG_SEATED) !== 0;
           const dx = p.x - a.x;
           const dy = p.y - a.y;
-          if (Math.hypot(dx, dy) > 80) {
-            a.x = p.x;
-            a.y = p.y;
+          const dist = Math.hypot(dx, dy);
+          if (seatedNow && dist > 0.5 && dist <= 80 && !this.reduce) {
+            // walking over to the seat: a steady glide rather than a snap
+            gliding = true;
+            const step = approach(0, dist, 0.1, GLIDE_SPEED * dt);
+            a.x += (dx / dist) * step;
+            a.y += (dy / dist) * step;
+            a.dir = travelDir(dx, dy, p.dir);
           } else {
-            a.x += dx * ease;
-            a.y += dy * ease;
+            if (dist > 80 || (seatedNow && this.reduce)) {
+              a.x = p.x;
+              a.y = p.y;
+            } else {
+              a.x += dx * ease;
+              a.y += dy * ease;
+            }
+            a.dir = p.dir;
           }
-          a.dir = p.dir;
-          a.moving = (p.flags & FLAG_MOVING) !== 0 || Math.hypot(dx, dy) > 0.6;
-          a.seated = (p.flags & FLAG_SEATED) !== 0;
+          a.moving = gliding || (p.flags & FLAG_MOVING) !== 0 || dist > 0.6;
+          if (seatedNow && !a.seated) a.seat = null;
+          a.seated = seatedNow;
           a.role = p.role;
+          if (seatedNow && !a.seat) a.seat = findSeat(this.map, registry.furniture, p.x, p.y);
         }
-      }
-      const walk = a.moving && !a.seated;
-      const frame = walk ? `walk${Math.floor(time / 125) % 4}` : `idle${Math.floor(time / 600) % 2}`;
+      } else if (this.seated && !a.seat) a.seat = findSeat(this.map, registry.furniture, this.seatGlide?.x ?? this.myX, this.seatGlide?.y ?? this.myY);
+
+      // sit/stand ramp: slow in, a touch quicker out; nothing eased when motion is reduced
+      const want = a.seated && !gliding ? 1 : 0;
+      if (this.reduce) a.sitK = want;
+      else a.sitK = Math.min(1, Math.max(0, a.sitK + (want ? dt / SIT_IN : -dt / SIT_OUT)));
+      if (a.sitK === 0 && !a.seated) a.seat = null;
+      if (mine) this.mySitK = a.sitK;
+      const e = smoothstep(a.sitK);
+
+      let frame: string;
+      if (a.sitK >= 0.5) frame = a.sitK >= 1 ? seatedFrame(time, a.phase, this.reduce) : 'sit0';
+      else frame = a.moving ? `walk${Math.floor(time / 125) % 4}` : `idle${Math.floor(time / 600) % 2}`;
       const x = Math.round(a.x);
       const y = Math.round(a.y);
-      a.sprite.setPosition(x, y + (a.seated ? 2 : 0)).setFrame(`${a.dir}-${frame}`).setDepth(y);
-      const top = y - FRAME_H;
-      a.name.setPosition(x, top - 1).setDepth(y + 1);
+      // sink onto the cushion; a one pixel dip halfway through gives the settle
+      const dip = this.reduce ? 0 : Math.sin(Math.PI * e) * 1.4;
+      const sy = y + Math.round(e * SIT_SINK + dip);
+      const depth = a.sitK > 0 ? seatedDepth(a.seat, y) : y;
+      a.sprite.setPosition(x, sy).setFrame(`${a.dir}-${frame}`).setDepth(depth);
+
+      // a warm pool of light under whoever is sitting
+      if (a.sitK > 0 && !a.glow) {
+        a.glow = this.add.image(x, y, this.seatGlowTexture()).setBlendMode(Phaser.BlendModes.ADD);
+      }
+      if (a.glow) {
+        if (a.sitK <= 0) {
+          a.glow.destroy();
+          a.glow = undefined;
+        } else {
+          const breathe = this.reduce ? 0 : Math.sin((time + a.phase) / 2600) * 0.04;
+          a.glow.setPosition(x, y - 6).setDepth(depth - 0.25).setAlpha((0.2 + breathe) * e);
+        }
+      }
+
+      // the sitting picture is shorter, so the name and bubbles come down with it
+      const top = y - FRAME_H + Math.round(e * 5);
+      a.name.setPosition(x, top - 1).setDepth(a.seat ? Math.max(depth, a.seat.furnitureDepth) + 1 : y + 1);
       if (a.role !== 'player') a.name.setColor(a.role === 'guide' ? '#e8955a' : '#f1e3c1');
       if (a.bubble) {
         if (time > a.bubbleUntil) {
@@ -744,5 +927,25 @@ export class WorldScene extends Phaser.Scene {
         }
       }
     }
+  }
+
+  /** A soft round glow, drawn once and shared. */
+  private seatGlowTexture(): string {
+    const key = 'seat-glow';
+    if (!this.textures.exists(key)) {
+      const c = document.createElement('canvas');
+      c.width = c.height = 64;
+      const g = c.getContext('2d');
+      if (g) {
+        const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+        grad.addColorStop(0, 'rgba(255,176,110,1)');
+        grad.addColorStop(0.45, 'rgba(255,150,90,0.45)');
+        grad.addColorStop(1, 'rgba(255,140,80,0)');
+        g.fillStyle = grad;
+        g.fillRect(0, 0, 64, 64);
+      }
+      this.textures.addCanvas(key, c);
+    }
+    return key;
   }
 }

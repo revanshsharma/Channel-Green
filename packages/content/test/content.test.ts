@@ -81,9 +81,9 @@ describe('avatars', () => {
     expect(sums.size).toBeGreaterThan(15);
   });
 
-  it('has 24 frames and mirrors the side view', () => {
+  it('has 40 frames and mirrors the side view', () => {
     const f = renderAvatarFrames(randomAvatar(reg.avatar, 3), reg.avatar);
-    expect(Object.keys(f)).toHaveLength(24);
+    expect(Object.keys(f)).toHaveLength(40);
     expect(f['right-idle0'].checksum()).toBe(f['left-idle0'].flippedX().checksum());
   });
 
