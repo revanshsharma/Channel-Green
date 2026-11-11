@@ -2,6 +2,8 @@
 
 *Somewhere to belong.*
 
+**SUCH IS LIFE.** is our quote.
+
 Channel Green is an open-source social universe by [ZeroTheory](https://zerotheoryapp.tech): a cozy pixel-art 2D world where you walk around with friends and strangers, sit in a cafe, watch something together, share a quiet pond, or leave an anonymous note on the confession wall. It is built to feel like a late-evening room, not a dashboard.
 
 Status: early MVP. It runs, two people can walk around and talk in it, but it has not been deployed anywhere and several parts are unfinished. See the honest status below.
@@ -96,4 +98,4 @@ Rooms, furniture, avatar parts and soundscapes are plain data files, so you can 
 
 ## Credits and licence
 
-Code is MIT licensed. Core content pack data is CC-BY-SA-4.0. Fonts are open source under the SIL Open Font License. Full list in [ATTRIBUTIONS.md](ATTRIBUTIONS.md). The mood is inspired by quiet, warm, late-night music; no artwork or audio from any artist is used.
+Our quote: SUCH IS LIFE. Code is MIT licensed. Core content pack data is CC-BY-SA-4.0. Fonts are open source under the SIL Open Font License. Full list in [ATTRIBUTIONS.md](ATTRIBUTIONS.md). The mood is inspired by quiet, warm, late-night music; no artwork or audio from any artist is used.

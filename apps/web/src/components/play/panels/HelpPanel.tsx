@@ -1,4 +1,5 @@
 'use client';
+import { BRAND } from '@channel-green/shared';
 export function HelpPanel() {
   return (
     <div className="prose-cg space-y-3 text-sm">
@@ -9,6 +10,7 @@ export function HelpPanel() {
       <p><strong>Sound</strong> is off until you turn it on. <strong>Voice and video</strong> only start after you say yes.</p>
       <p><strong>Private rooms</strong> are in the Rooms panel. Share the code with people you want there.</p>
       <p className="text-olive-soft">Be kind. If something is wrong, use Report. Blocking is always one click away.</p>
+      <p className="pt-1 text-center font-pixel text-base text-orange">{BRAND.quote}</p>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
 import Link from 'next/link';
-import { NAME_MAX, randomAvatar, sanitizeAvatar, sanitizeName, type AvatarConfig } from '@channel-green/shared';
+import { BRAND, NAME_MAX, randomAvatar, sanitizeAvatar, sanitizeName, type AvatarConfig } from '@channel-green/shared';
 import { registry } from '@/lib/registry';
 import type { LocalProfile } from '@/lib/profile';
 import { AvatarEditor } from './AvatarEditor';
@@ -42,6 +42,7 @@ export function Gate({ compact, initial, onDone, title = 'Who are you today?', c
         <button type="submit" className="btn btn-primary px-6 py-3 text-xl">{cta}</button>
         <Link href="/guidelines" className="text-sm text-olive-soft underline underline-offset-4">By walking in you agree to the community guidelines</Link>
       </div>
+      <p className="mt-8 text-center font-pixel text-base text-olive-soft">{BRAND.quote}</p>
     </form>
   );
 }

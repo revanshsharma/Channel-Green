@@ -18,6 +18,7 @@ export const PALETTE = {
 export const BRAND = {
   name: 'Channel Green',
   tagline: 'Somewhere to belong.',
+  quote: 'SUCH IS LIFE.',
   parent: 'ZeroTheory',
   parentUrl: 'https://zerotheoryapp.tech',
   repoUrl: 'https://github.com/revanshsharma/Channel-Green',

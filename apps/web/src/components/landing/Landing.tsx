@@ -138,6 +138,10 @@ export function Landing() {
               </li>
             ))}
           </ul>
+          <figure className="signature-quote" aria-label="Our quote">
+            <p className="eyebrow text-charcoal-soft">our quote</p>
+            <blockquote className="signature-quote-text font-pixel">{BRAND.quote}</blockquote>
+          </figure>
         </div>
         <div className="pool" aria-hidden="true" />
       </section>
@@ -201,6 +205,7 @@ export function Landing() {
 
       <footer className="border-t-2 border-moss px-6 py-10 text-center text-sm text-olive-soft">
         <p className="font-pixel text-lg text-offwhite">CHANNEL GREEN</p>
+        <p className="mt-1 font-pixel text-base text-orange">{BRAND.quote}</p>
         <p className="mt-1">
           A{' '}
           <a href={BRAND.parentUrl} target="_blank" rel="noreferrer" className="text-orange underline underline-offset-4">

@@ -14,7 +14,7 @@ export const metadata: Metadata = {
   description: 'A cozy, open-source pixel world to hang out in. Walk around, sit by a fire, watch something together, say hi. A ZeroTheory project.',
   openGraph: {
     title: 'Channel Green',
-    description: 'Somewhere to belong. A cozy open-source pixel world.',
+    description: 'Somewhere to belong. A cozy open-source pixel world. SUCH IS LIFE.',
     type: 'website',
   },
   icons: { icon: '/icon.svg' },
