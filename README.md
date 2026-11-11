@@ -50,14 +50,20 @@ Safety is enforced on the server, not the browser: rate limits, word filtering, 
 ## Honest feature status
 
 Checked by running it (typecheck, lint, tests and a real browser session):
-- Install, typecheck, lint, unit and integration tests, and production build all pass.
+- Install, typecheck, lint and tests passed before the latest pass; in the latest pass only the typecheck was confirmed on the build machine (see the roadmap). A fresh production build was not re-run.
 - Landing page, guest entry, avatar editor, walking in Town Square.
 - Two browser windows in the same room see each other, see each other move, and exchange chat messages.
 - The server health check and the site's "is the world awake" indicator.
 - The server runs without Supabase or LiveKit keys.
 
-Built and covered by automated tests, but not clicked through in a browser by us:
-- Watch Together and Listening Room sync, room switching and private rooms, confession wall, blocking and reporting, moderation tools.
+Also clicked through in a real browser earlier: private rooms, Watch Together sync, the People panel, the Rooftop, the disabled voice panel, and frame-rate independent walking.
+
+Built and covered by automated tests, but not re-checked in a browser in the latest pass:
+- Confession wall, Listening Room sync, blocking and reporting, moderation tools. A two-window browser run of these was started but the test browser kept dropping out on the build machine, so it was not completed.
+
+Added in the latest pass and looked at in screenshots only (no automated checks):
+- The dusk look: per-room light and colour, vignette, grain and drifting dust, the warm landing page with cream typography and pool-water shimmer. Everything respects the reduced-motion setting.
+- Touch controls (move pad, interact and chat buttons, phones only) and an accessibility pass (focus outlines, labels, Escape closes panels, skip link).
 
 Built but never run against the real service:
 - Voice and video with LiveKit (needs keys; the interface shows as disabled without them).
@@ -65,10 +71,10 @@ Built but never run against the real service:
 - The realtime Dockerfile (written, not built here).
 
 Known rough edges:
-- Some labels (for example the Quiet Pond portal) overlap the emote bar on small screens.
-- Movement speed is tied to frame rate on very slow devices.
-- Mobile touch controls are not built.
-- Accessibility has had a first pass only (no full audit).
+- Portal labels no longer sit under the emote bar (the camera now leaves room), but this was only eyeballed on a few screen sizes.
+- Touch controls exist but have not been tried on a real phone.
+- Accessibility has had a second pass, not a full audit with a screen reader.
+- The grain can look strong on large grass areas; the colours and strengths are first guesses.
 
 ## Roadmap
 
@@ -77,8 +83,9 @@ Not done yet:
 - [ ] Apply and test the Supabase schema with real sign-in
 - [ ] Test voice and video with a real LiveKit project
 - [ ] Browser end-to-end tests for panels beyond chat
-- [ ] Touch controls for phones
-- [ ] Keyboard-only and screen-reader audit
+- [x] Touch controls for phones (first version, needs a real-phone test)
+- [ ] Full keyboard-only and screen-reader audit
+- [ ] Browser test of confession wall, Listening Room and block/mute with two players
 - [ ] Proper moderation dashboard for guides
 - [ ] More rooms, more avatar parts, community content packs
 - [ ] Persistent furniture placement for home rooms
