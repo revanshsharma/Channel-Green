@@ -1,5 +1,7 @@
 # Deployment
 
+New to this? Follow the step-by-step [SETUP-CHECKLIST.md](SETUP-CHECKLIST.md) (Azure, Supabase, LiveKit, Vercel, in order, with cost safety).
+
 Status: deployment-ready on paper, not deployed. Nothing here has been run against real hosting accounts. Do not deploy until you have seen a preview and agreed.
 
 Two services plus two optional ones:

@@ -37,6 +37,8 @@ Useful commands:
 
 Copy `apps/realtime/.env.example` and `apps/web/.env.example` if you want to change anything. Every variable is explained in [docs/ENV.md](docs/ENV.md).
 
+Docs: [docs/ENV.md](docs/ENV.md) (settings), [docs/VOICE.md](docs/VOICE.md) (voice and video), [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) (hosting), [docs/SETUP-CHECKLIST.md](docs/SETUP-CHECKLIST.md) (step-by-step setup for the owner).
+
 ## How it is built
 
     apps/web         Next.js site and the Phaser game client
