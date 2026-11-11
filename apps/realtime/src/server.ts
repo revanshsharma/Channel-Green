@@ -422,7 +422,7 @@ export function createRealtime(cfg: Config, overrides: { store?: Store; voice?: 
         try {
           if (!joinLimiter.allow(`ip:${socket.data.ip}`)) return ack(fail('Too many tries. Wait a minute.'));
           const id = await auth.verify(data.token);
-          if (!id) return ack(fail('auth'));
+          if (!id) return ack(fail('Could not sign you in. Please reload the page.'));
           if (await store.isBanned(id.uid)) return ack(fail('This account cannot join Channel Green.'));
           const name = sanitizeName(data.name);
           if (!name) return ack(fail('Pick a name with at least 2 letters or numbers.'));

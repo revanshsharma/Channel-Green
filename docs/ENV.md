@@ -15,6 +15,7 @@ All `NEXT_PUBLIC_*` values are visible in the browser. Nothing here is secret.
 - `PORT`: listening port (hosts usually set it for you). Default 4001.
 - `NODE_ENV`: set `production` when deployed. In production `SERVER_SECRET` is required.
 - `SERVER_SECRET`: 32+ random characters; signs guest tokens and derives anonymous ids. Changing it logs out all guests.
+  In development, if it is empty or shorter than 32 characters, the server makes a new random one on every start, so a guest saved in your browser stops working after each restart (the page quietly gets a new guest pass, but you will start as a new guest). Put a fixed 32+ character value in `apps/realtime/.env` to keep the same guest across restarts.
 - `ALLOWED_ORIGINS`: comma-separated list of site addresses allowed to connect, for example `https://zerotheoryapp.tech`.
 - `TRUST_PROXY`: `true` when behind a proxy that sets the forwarded-for header (most hosts).
 - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`: turn on the database store. Both needed. Server only.

@@ -16,6 +16,7 @@ import {
   type VoiceTokenOk,
 } from '@channel-green/shared';
 import { call, connectNet, fetchJson, type Net } from '@/lib/net';
+import { GUEST_SIGN_IN_FAILED, isGuestToken, joinErrorMessage, shouldRemintGuest } from './joinRetry';
 import { getToken, saveProfile, type LocalProfile } from '@/lib/profile';
 import { expandShortcodes } from '@/lib/emoji';
 import { audio } from './audio';
@@ -154,24 +155,31 @@ export class GameSession {
     if (this.disposed) return;
     const net = connectNet();
     this.net = net;
+    const joinWith = (t: string) => call<JoinOk>(net, 'join', { token: t, name: this.profile.name, avatar: this.profile.avatar, map: 'town-square', blocks: this.profile.blocks });
     const doJoin = async () => {
-      try {
-        const res = await call<JoinOk>(net, 'join', { token, name: this.profile.name, avatar: this.profile.avatar, map: 'town-square', blocks: this.profile.blocks });
-        this.applyJoin(res, true);
-      } catch (e) {
-        const msg = (e as Error).message;
-        if (/token|sign/i.test(msg)) {
-          try {
-            token = await getToken(true);
-            const res = await call<JoinOk>(net, 'join', { token, name: this.profile.name, avatar: this.profile.avatar, map: 'town-square', blocks: this.profile.blocks });
-            this.applyJoin(res, true);
-            return;
-          } catch (e2) {
-            this.set({ status: 'error', error: (e2 as Error).message });
-            return;
+      let retried = false;
+      for (;;) {
+        try {
+          const res = await joinWith(token);
+          this.applyJoin(res, true);
+          return;
+        } catch (e) {
+          const msg = (e as Error).message;
+          if (this.disposed) return;
+          if (shouldRemintGuest(msg, token, retried)) {
+            // The saved guest pass no longer verifies (for example the server restarted with a new secret). Get a new one, once.
+            retried = true;
+            try {
+              token = await getToken(true);
+            } catch {
+              this.set({ status: 'error', error: GUEST_SIGN_IN_FAILED });
+              return;
+            }
+            continue;
           }
+          this.set({ status: 'error', error: joinErrorMessage(msg, isGuestToken(token)) });
+          return;
         }
-        this.set({ status: 'error', error: msg });
       }
     };
     net.on('connect', () => {
