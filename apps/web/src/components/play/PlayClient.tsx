@@ -8,6 +8,7 @@ import { audio } from '@/game/audio';
 import { Gate } from './Gate';
 import { GameCanvas } from './GameCanvas';
 import { Hud } from './Hud';
+import { MoodOverlay } from './MoodOverlay';
 
 export function PlayClient() {
   const [profile, setProfile] = useState<LocalProfile | null | undefined>(undefined);
@@ -51,6 +52,7 @@ function World({ profile }: { profile: LocalProfile }) {
     <SessionContext.Provider value={boot.session}>
       <div className="fixed inset-0 overflow-hidden bg-forest-deep">
         <GameCanvas session={boot.session} controls={boot.controls} />
+        <MoodOverlay />
         <Hud controls={boot.controls} />
       </div>
     </SessionContext.Provider>

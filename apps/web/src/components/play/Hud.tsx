@@ -45,8 +45,8 @@ export function Hud({ controls }: { controls: Controls }) {
 
   const map = registry.maps[s.mapId];
   const features = map?.features ?? [];
-  const btn = (id: Exclude<PanelId, null>, label: string, badge?: number) => (
-    <button key={id} className={`btn btn-sm ${s.panel === id ? 'btn-primary' : ''}`} onClick={() => game.openPanel(id)} aria-pressed={s.panel === id}>
+  const btn = (id: Exclude<PanelId, null>, label: string, badge?: number, aria?: string) => (
+    <button key={id} className={`btn btn-sm ${s.panel === id ? 'btn-primary' : ''}`} onClick={() => game.openPanel(id)} aria-pressed={s.panel === id} aria-label={aria}>
       {label}
       {badge ? <span className="ml-1 rounded bg-orange px-1 text-ink">{badge}</span> : null}
     </button>
@@ -73,19 +73,23 @@ export function Hud({ controls }: { controls: Controls }) {
     );
   }
 
+  const stop = () => (controls.touch = { x: 0, y: 0 });
   const dpad = (dx: number, dy: number, label: string) => (
     <button
-      className="btn grid h-12 w-12 place-items-center text-xl select-none"
+      type="button"
+      className="touch-pad"
       aria-label={label}
       onPointerDown={(e) => {
-        (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+        e.preventDefault();
+        (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
         controls.touch = { x: dx, y: dy };
       }}
-      onPointerUp={() => (controls.touch = { x: 0, y: 0 })}
-      onPointerCancel={() => (controls.touch = { x: 0, y: 0 })}
-      onPointerLeave={() => (controls.touch = { x: 0, y: 0 })}
+      onPointerUp={stop}
+      onPointerCancel={stop}
+      onLostPointerCapture={stop}
+      onContextMenu={(e) => e.preventDefault()}
     >
-      {dx < 0 ? '◀' : dx > 0 ? '▶' : dy < 0 ? '▲' : '▼'}
+      <span aria-hidden="true">{dx < 0 ? '\u25C0' : dx > 0 ? '\u25B6' : dy < 0 ? '\u25B2' : '\u25BC'}</span>
     </button>
   );
 
@@ -95,8 +99,8 @@ export function Hud({ controls }: { controls: Controls }) {
       {s.status === 'offline' && <div role="status" className="absolute inset-x-0 top-0 z-30 bg-orange-deep py-1 text-center text-sm text-offwhite">{s.error}</div>}
 
       <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex flex-wrap items-start justify-between gap-2 p-2">
-        <div className="panel pointer-events-auto flex items-center gap-3 px-3 py-1.5">
-          <Link href="/" className="font-pixel text-neon" title="Leave Channel Green">CG</Link>
+        <div className="panel pointer-events-auto flex items-center gap-3 px-3 py-1.5" aria-label="Where you are">
+          <Link href="/" className="font-pixel text-neon" title="Leave Channel Green" aria-label="Leave Channel Green">CG</Link>
           <div>
             <div className="font-pixel leading-tight">{s.room?.mode === 'invite' ? `${s.room.name || map?.name} (private)` : map?.name}</div>
             <div className="text-xs text-olive-soft">
@@ -107,7 +111,7 @@ export function Hud({ controls }: { controls: Controls }) {
             </div>
           </div>
         </div>
-        <div className="pointer-events-auto flex flex-wrap justify-end gap-1">
+        <nav aria-label="Panels" className="pointer-events-auto flex flex-wrap justify-end gap-1">
           {btn('chat', 'Chat', s.unread)}
           {btn('people', 'People', s.players.length > 0 ? s.players.length : undefined)}
           {features.includes('watch') && btn('watch', 'Watch')}
@@ -128,14 +132,14 @@ export function Hud({ controls }: { controls: Controls }) {
           >
             Sound {sound ? 'on' : 'off'}
           </button>
-          {btn('help', '?')}
-        </div>
+          {btn('help', '?', undefined, 'How it works')}
+        </nav>
       </div>
 
       {s.panel && s.panel !== 'noticeboard' && (
-        <aside className="panel absolute bottom-2 right-2 top-14 z-30 flex w-[min(400px,calc(100vw-1rem))] flex-col overflow-hidden" aria-label={s.panel}>
+        <aside className="panel absolute bottom-2 right-2 top-14 z-30 flex w-[min(400px,calc(100vw-1rem))] flex-col overflow-hidden" aria-label={TITLES[s.panel]}>
           <div className="flex items-center justify-between border-b-2 border-moss px-3 py-1.5">
-            <h2 className="font-pixel capitalize text-neon">{TITLES[s.panel]}</h2>
+            <h2 className="font-pixel text-neon">{TITLES[s.panel]}</h2>
             <button className="btn btn-sm btn-quiet" onClick={() => game.closePanel()} aria-label="Close panel">x</button>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto p-3">
@@ -153,8 +157,8 @@ export function Hud({ controls }: { controls: Controls }) {
       )}
 
       {s.note && (
-        <div className="absolute inset-0 z-40 grid place-items-center bg-black/40 p-4" onClick={() => game.closeNote()}>
-          <div className="panel max-w-sm p-4" role="dialog" aria-label={s.note.title} onClick={(e) => e.stopPropagation()}>
+        <div className="absolute inset-0 z-40 grid place-items-center bg-black/40 p-4" onClick={() => game.closeNote()} onKeyDown={(e) => e.key === 'Escape' && game.closeNote()}>
+          <div className="panel max-w-sm p-4" role="dialog" aria-modal="true" aria-label={s.note.title} onClick={(e) => e.stopPropagation()}>
             <h3 className="font-pixel text-lg text-orange">{s.note.title}</h3>
             <p className="mt-2 text-cream">{s.note.text}</p>
             <button className="btn btn-sm mt-3" onClick={() => game.closeNote()} autoFocus>Okay</button>
@@ -185,31 +189,46 @@ export function Hud({ controls }: { controls: Controls }) {
             <div key={t.id} className={`panel px-3 py-1 text-sm ${t.level === 'warn' ? 'border-orange' : ''}`}>{t.text}</div>
           ))}
         </div>
-        <div className="flex w-full items-end justify-between gap-2">
-          <div className="pointer-events-auto grid grid-cols-3 gap-1 sm:hidden" aria-label="Move">
-            <span />
-            {dpad(0, -1, 'Move up')}
-            <span />
-            {dpad(-1, 0, 'Move left')}
-            {dpad(0, 1, 'Move down')}
-            {dpad(1, 0, 'Move right')}
-          </div>
-          <div className="pointer-events-auto mx-auto flex flex-wrap items-center justify-center gap-1">
-            {s.nearby && (
-              <button className="btn btn-primary" onClick={() => controls.trigger()}>
-                {s.nearby.kind === 'portal' ? s.nearby.label : `${s.nearby.label}`} <span className="hidden sm:inline text-xs opacity-70">[E]</span>
+        <div className="pointer-events-auto flex max-w-full flex-col items-center gap-1">
+          {s.nearby && (
+            <button className="btn btn-primary" onClick={() => controls.trigger()}>
+              {s.nearby.label} <span className="hidden text-xs opacity-70 sm:inline">[E]</span>
+            </button>
+          )}
+          <div className="emote-bar flex items-center justify-center gap-1" role="group" aria-label="Emotes">
+            {registry.emotes.map((em) => (
+              <button key={em.id} className="btn btn-sm btn-quiet shrink-0" title={em.label} aria-label={em.label} onClick={() => game.emote(em.id)}>
+                {em.glyph}
               </button>
-            )}
-            <div className="flex flex-wrap justify-center gap-1">
-              {registry.emotes.map((em) => (
-                <button key={em.id} className="btn btn-sm btn-quiet" title={em.label} aria-label={em.label} onClick={() => game.emote(em.id)}>
-                  {em.glyph}
-                </button>
-              ))}
+            ))}
+          </div>
+        </div>
+        {!s.panel && (
+          <div className="touch-ui w-full items-end justify-between px-1 pb-1">
+            <div className="pointer-events-auto grid grid-cols-3 gap-1" role="group" aria-label="Move">
+              <span />
+              {dpad(0, -1, 'Move up')}
+              <span />
+              {dpad(-1, 0, 'Move left')}
+              {dpad(0, 1, 'Move down')}
+              {dpad(1, 0, 'Move right')}
+            </div>
+            <div className="pointer-events-auto flex flex-col items-end gap-2">
+              <button type="button" className="touch-pad !h-14 !w-14 font-pixel text-sm" aria-label="Chat" onClick={() => game.openPanel('chat')}>
+                Chat
+              </button>
+              <button
+                type="button"
+                className="touch-pad !h-16 !w-16 font-pixel text-base"
+                data-down={s.nearby ? 'true' : 'false'}
+                aria-label={s.nearby ? s.nearby.label : 'Interact'}
+                onClick={() => controls.trigger()}
+              >
+                {s.nearby ? 'Go' : 'E'}
+              </button>
             </div>
           </div>
-          <div className="w-0 sm:w-0" />
-        </div>
+        )}
       </div>
     </>
   );

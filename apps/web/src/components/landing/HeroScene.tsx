@@ -57,6 +57,10 @@ export function HeroScene({ className = '' }: { className?: string }) {
     const flies = Array.from({ length: 28 }, () => ({ x: rnd() * W, y: rnd() * H, ph: rnd() * 10 }));
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+    const dusk = ctx.createLinearGradient(0, 0, 0, H);
+    dusk.addColorStop(0, 'rgba(70,42,96,0.34)');
+    dusk.addColorStop(0.55, 'rgba(214,110,70,0.26)');
+    dusk.addColorStop(1, 'rgba(255,150,80,0.3)');
     let raf = 0;
     let last = performance.now();
     const frame = (t: number) => {
@@ -98,7 +102,7 @@ export function HeroScene({ className = '' }: { className?: string }) {
         const c = FRAME_NAMES.indexOf((moving ? `walk${Math.floor(t / 125) % 4}` : `idle${Math.floor(t / 600) % 2}`) as (typeof FRAME_NAMES)[number]);
         ctx.drawImage(w.sheet, c * FRAME_W, r * FRAME_H, FRAME_W, FRAME_H, Math.round(w.x - FRAME_W / 2), Math.round(w.y - FRAME_H), FRAME_W, FRAME_H);
       }
-      ctx.fillStyle = 'rgba(28,42,94,0.28)';
+      ctx.fillStyle = dusk;
       ctx.fillRect(0, 0, W, H);
       for (const f of flies) {
         if (!reduce) {

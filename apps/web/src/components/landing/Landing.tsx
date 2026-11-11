@@ -62,7 +62,8 @@ export function Landing() {
   };
 
   return (
-    <main>
+    <main id="main" tabIndex={-1}>
+      <a href="#about" className="skip-link">Skip to the story</a>
       {entering && (
         <div className="fixed inset-0 z-50 bg-forest-deep grid place-items-center" role="status" aria-live="polite">
           <div className="text-center">
@@ -75,8 +76,8 @@ export function Landing() {
       )}
 
       <header className="absolute inset-x-0 top-0 z-10 flex items-center justify-between px-4 py-3 md:px-8">
-        <span className="font-pixel text-lg text-neon">CHANNEL GREEN</span>
-        <nav className="flex items-center gap-4 text-sm text-cream">
+        <span className="font-pixel text-lg text-offwhite">CHANNEL <span className="text-neon">GREEN</span></span>
+        <nav aria-label="Main" className="flex flex-wrap items-center justify-end gap-x-4 gap-y-1 text-sm text-offwhite">
           <a href="#about" className="hover:text-neon">About</a>
           <a href="#rooms" className="hover:text-neon">Rooms</a>
           <a href="#contribute" className="hover:text-neon">Contribute</a>
@@ -91,13 +92,15 @@ export function Landing() {
         <div className="absolute inset-0 opacity-90">
           <HeroScene className="h-full w-full object-cover" />
         </div>
-        <div className="absolute inset-0 bg-gradient-to-t from-forest-deep via-forest-deep/50 to-forest-deep/20" />
+                <div className="sunset-wash absolute inset-0" aria-hidden="true" />
+        <div className="film-grain" aria-hidden="true" />
         <div className="relative z-10 mx-auto flex min-h-[88vh] max-w-4xl flex-col items-center justify-end px-6 pb-16 text-center">
           <h1 className="font-pixel text-5xl md:text-7xl text-offwhite drop-shadow-[0_4px_0_#0b1f15]">
             CHANNEL <span className="text-neon">GREEN</span>
           </h1>
           <p className="mt-3 font-pixel text-xl md:text-2xl text-orange">{BRAND.tagline}</p>
-          <p className="mt-4 max-w-xl text-cream">
+          <p className="eyebrow mt-6 text-cream-dim">a small town at dusk, open all night</p>
+          <p className="mt-3 max-w-xl text-lg font-light text-offwhite">
             A small, cozy pixel world. Walk around, sit by a fire, watch something together, leave a note on the wall. No pressure, no feed, no score.
           </p>
           <button onClick={enter} className="btn btn-primary mt-8 px-8 py-4 text-2xl animate-[drift_3s_ease-in-out_infinite]">
@@ -110,35 +113,39 @@ export function Landing() {
         </div>
       </section>
 
-      <section id="about" className="mx-auto max-w-4xl px-6 py-20">
-        <h2 className="font-pixel text-3xl text-neon">Somewhere to belong</h2>
-        <div className="prose-cg mt-4 text-lg">
-          <p>
-            Channel Green is a place for the evenings when you want company but not a crowd. You pick a look, you get a name, and you wander into a little town at dusk. There are a cafe, a living room with a fire, a rooftop, a garden, a room where it is always raining and a quiet corner where nobody has to talk.
-          </p>
-          <p>
-            Nothing here is trying to hold your attention. There are no likes, no streaks and no ads. If someone is kind to you, they can wave. If you want to be left alone, you can go to the quiet nook and just be there.
-          </p>
+      <section id="about" className="cream-section">
+        <div className="mx-auto max-w-4xl px-6 py-24">
+          <p className="eyebrow text-charcoal-soft">the idea</p>
+          <h2 className="quiet-line mt-4 text-5xl md:text-7xl">Somewhere to belong.</h2>
+          <div className="mt-10 max-w-2xl space-y-5 text-xl text-charcoal-soft">
+            <p className="quiet-line">
+              For the evenings when you want company but not a crowd. You pick a look, you get a name, and you wander into a little town at dusk. A cafe, a living room with a lamp on, a rooftop, a garden in golden hour, a room where it is always raining, and a quiet corner where nobody has to talk.
+            </p>
+            <p className="quiet-line">
+              Nothing here is trying to hold your attention. No likes, no streaks, no ads. If someone is kind to you, they can wave. If you want to be left alone, there is a nook for that.
+            </p>
+          </div>
+          <ul className="mt-14 grid gap-x-10 gap-y-8 sm:grid-cols-2">
+            {[
+              ['Walk and meet', 'Move around, see other people as they are, sit down next to them, wave, hug if they say yes.'],
+              ['Talk your way', 'Say it out loud with chat, whisper in private, or keep it to a small note in the quiet room.'],
+              ['Watch and listen together', 'Share a video or a little tune in sync with everyone in the room.'],
+              ['Say it on the wall', 'The confession wall is anonymous. Others can send a heart, and kind moderators keep it gentle.'],
+            ].map(([t, d]) => (
+              <li key={t} className="border-t border-charcoal/30 pt-4">
+                <h3 className="font-pixel text-xl text-orange-deep">{t}</h3>
+                <p className="mt-1 text-lg text-charcoal-soft">{d}</p>
+              </li>
+            ))}
+          </ul>
         </div>
-        <ul className="mt-8 grid gap-4 sm:grid-cols-2">
-          {[
-            ['Walk and meet', 'Move around, see other people as they are, sit down next to them, wave, hug if they say yes.'],
-            ['Talk your way', 'Say it out loud with chat, whisper in private, or keep it to a small note in the quiet room.'],
-            ['Watch and listen together', 'Share a video or a little tune in sync with everyone in the room.'],
-            ['Say it on the wall', 'The confession wall is anonymous. Others can send a heart, and kind moderators keep it gentle.'],
-          ].map(([t, d]) => (
-            <li key={t} className="panel p-4">
-              <h3 className="font-pixel text-xl text-orange">{t}</h3>
-              <p className="mt-1 text-cream">{d}</p>
-            </li>
-          ))}
-        </ul>
+        <div className="pool" aria-hidden="true" />
       </section>
 
-      <section id="rooms" className="bg-forest py-20">
+      <section id="rooms" className="bg-forest py-20" aria-labelledby="rooms-h">
         <div className="mx-auto max-w-6xl px-6">
-          <h2 className="font-pixel text-3xl text-neon">Ten rooms to start with</h2>
-          <p className="mt-2 max-w-2xl text-cream">Every room here is drawn from small data files, so anyone can add one. These pictures are the real rooms, not mock-ups.</p>
+          <h2 id="rooms-h" className="quiet-line text-4xl md:text-5xl text-offwhite">Ten rooms to start with</h2>
+          <p className="mt-3 max-w-2xl text-lg text-cream-dim">Every room here is drawn from small data files, so anyone can add one. These pictures are the real rooms, not mock-ups.</p>
           <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {ROOM_ORDER.map((id) => {
               const m = registry.maps[id];
@@ -160,7 +167,7 @@ export function Landing() {
       </section>
 
       <section id="contribute" className="mx-auto max-w-4xl px-6 py-20">
-        <h2 className="font-pixel text-3xl text-neon">Build it with us</h2>
+        <h2 className="quiet-line text-4xl md:text-5xl text-offwhite">Build it with us</h2>
         <div className="prose-cg mt-4">
           <p>
             Channel Green is open source (MIT). The world is made of plain data: rooms, furniture, outfits, little songs and sounds all live in content packs that you can read in a text editor. You do not need to know how to code to add a bench, a hat or a lullaby.
@@ -180,7 +187,7 @@ export function Landing() {
 
       <section id="guidelines" className="bg-forest py-20">
         <div className="mx-auto max-w-4xl px-6">
-          <h2 className="font-pixel text-3xl text-neon">House rules, short version</h2>
+          <h2 className="quiet-line text-4xl md:text-5xl text-offwhite">House rules, short version</h2>
           <ul className="prose-cg mt-4">
             <li>Be kind. Disagree without being cruel.</li>
             <li>No harassment, hate, sexual content or sharing other people&apos;s private information.</li>

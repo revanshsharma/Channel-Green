@@ -24,6 +24,7 @@ import { bufToCanvas, furnitureCanvas, renderGround } from '@/lib/art';
 import { registry } from '@/lib/registry';
 import type { GameSession, SceneEvent } from './session';
 import type { Controls } from './controls';
+import { moodFor, type GradeStop, type Mood } from './mood';
 
 type Obj = Phaser.GameObjects.GameObject;
 
@@ -72,6 +73,7 @@ export class WorldScene extends Phaser.Scene {
   private nearPortal = '';
   private ready = false;
   private pendingJoin: JoinOk | null = null;
+  private reduce = false;
 
   constructor() {
     super('world');
@@ -83,6 +85,7 @@ export class WorldScene extends Phaser.Scene {
   }
 
   create() {
+    this.reduce = typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     this.cameras.main.setBackgroundColor('#0b1f15');
     this.scale.on('resize', () => this.fit());
     this.fit();
@@ -117,11 +120,21 @@ export class WorldScene extends Phaser.Scene {
     this.controls.onAction = null;
   }
 
+  /** Leave room under the HUD (top bar and emote bar) so portal labels and the floor are never hidden behind it. */
+  private setCamBounds() {
+    if (!this.col) return;
+    const small = this.scale.width < 640;
+    const top = Math.ceil((small ? 64 : 48) / this.zoomLevel);
+    const bottom = Math.ceil((small ? 150 : 70) / this.zoomLevel);
+    this.cameras.main.setBounds(0, -top, this.col.width, this.col.height + top + bottom);
+  }
+
   private fit() {
     const w = this.scale.width;
     const h = this.scale.height;
     this.zoomLevel = Math.max(2, Math.min(5, Math.floor(Math.min(w / 300, h / 190))));
     this.cameras.main.setZoom(this.zoomLevel);
+    this.setCamBounds();
     if (this.prompt) this.prompt.setResolution(this.zoomLevel * 2);
     for (const a of this.avatars.values()) {
       a.name.setResolution(this.zoomLevel * 2);
@@ -180,6 +193,7 @@ export class WorldScene extends Phaser.Scene {
   // ------------------------------------------------------------------ room building
 
   private clearRoom() {
+    this.tweens.killAll();
     this.roomObjs.forEach((o) => o.destroy());
     this.roomObjs = [];
     this.avatars.forEach((a) => this.destroyAvatar(a));
@@ -220,13 +234,15 @@ export class WorldScene extends Phaser.Scene {
 
     const w = this.col.width;
     const h = this.col.height;
-    if (map.tint) this.track(this.add.rectangle(0, 0, w, h, Phaser.Display.Color.HexStringToColor(map.tint.color).color, map.tint.alpha).setOrigin(0, 0).setDepth(90000));
-    for (const e of map.effects) this.addEffect(e.type, e.count ?? 20, e.color);
+    const mood = moodFor(map.id);
+    this.applyMood(map.id, mood, w, h);
+    for (const e of map.effects) if (!mood.skipEffects?.includes(e.type)) this.addEffect(e.type, e.count ?? 20, e.color);
+    this.addMotes(mood, w, h);
 
     // portal glow so doors can be found
     for (const p of this.col.portals) {
       const g = this.track(this.add.rectangle(p.px.x, p.px.y, p.px.w, p.px.h, 0x9dff6a, 0.12).setOrigin(0, 0).setDepth(-49000));
-      this.tweens.add({ targets: g, alpha: 0.28, duration: 1400, yoyo: true, repeat: -1, ease: 'Sine.inOut' });
+      if (!this.reduce) this.tweens.add({ targets: g, alpha: 0.28, duration: 1400, yoyo: true, repeat: -1, ease: 'Sine.inOut' });
       const label = this.track(
         this.add.text(p.px.x + p.px.w / 2, p.px.y + p.px.h / 2, p.label, { fontFamily: FONT, fontSize: '7px', color: '#e8f7cf', stroke: '#0b1f15', strokeThickness: 2 }).setOrigin(0.5).setDepth(89000).setAlpha(0.85),
       );
@@ -246,7 +262,7 @@ export class WorldScene extends Phaser.Scene {
     for (const p of j.players) this.addAvatar(p);
 
     const cam = this.cameras.main;
-    cam.setBounds(0, 0, w, h);
+    this.setCamBounds();
     cam.centerOn(this.myX, this.myY - 12);
     const me = this.avatars.get(j.me.pid);
     if (me) cam.startFollow(me.sprite, true, 0.12, 0.12);
@@ -254,6 +270,7 @@ export class WorldScene extends Phaser.Scene {
   }
 
   private animateFurniture(img: Phaser.GameObjects.Image, def: FurnitureDef, i: number) {
+    if (this.reduce && def.anim !== 'tv') return;
     switch (def.anim) {
       case 'sway':
         img.setOrigin(0.5, 1).setPosition(img.x + def.size[0] / 2, img.y + def.size[1]);
@@ -305,6 +322,7 @@ export class WorldScene extends Phaser.Scene {
     const img = this.track(this.add.image(x, y, this.lightTex(Math.round(l.radius), l.color)).setBlendMode(Phaser.BlendModes.ADD).setDepth(90001));
     const base = l.intensity * 0.7;
     img.setAlpha(base);
+    if (this.reduce) return;
     if (l.flicker) this.tweens.add({ targets: img, alpha: base * (1 - l.flicker * 2), duration: 170 + Math.random() * 200, yoyo: true, repeat: -1 });
     else this.tweens.add({ targets: img, alpha: base * 0.9, duration: 2400, yoyo: true, repeat: -1, ease: 'Sine.inOut' });
   }
@@ -369,6 +387,98 @@ export class WorldScene extends Phaser.Scene {
         r.setPosition(it.x, it.y);
       }
     });
+  }
+
+  // ------------------------------------------------------------------ mood (dusk grade, lamp pools, drifting specks)
+
+  private gradeTex(key: string, w: number, h: number, stops: GradeStop[]): string {
+    if (!this.textures.exists(key)) {
+      const c = document.createElement('canvas');
+      c.width = 4;
+      c.height = Math.max(2, Math.round(h));
+      const ctx = c.getContext('2d')!;
+      const g = ctx.createLinearGradient(0, 0, 0, c.height);
+      for (const [o, col, a] of stops) {
+        const r = parseInt(col.slice(1, 3), 16);
+        const gr = parseInt(col.slice(3, 5), 16);
+        const b = parseInt(col.slice(5, 7), 16);
+        g.addColorStop(o, `rgba(${r},${gr},${b},${a})`);
+      }
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, 4, c.height);
+      this.textures.addCanvas(key, c);
+    }
+    void w;
+    return key;
+  }
+
+  private applyMood(id: string, mood: Mood, w: number, h: number) {
+    const day = this.track(this.add.image(0, 0, this.gradeTex(`grade:${id}`, w, h, mood.grade)).setOrigin(0, 0).setDisplaySize(w, h).setDepth(90000));
+    let night: Phaser.GameObjects.Image | null = null;
+    if (mood.sunset) {
+      night = this.track(this.add.image(0, 0, this.gradeTex(`grade:${id}:night`, w, h, mood.sunset.night)).setOrigin(0, 0).setDisplaySize(w, h).setDepth(90000).setAlpha(this.reduce ? 0.35 : 0));
+      const stars = Array.from({ length: mood.sunset.stars }, () => {
+        const r = this.track(this.add.rectangle(Math.random() * w, Math.random() * h * 0.7, 1, 1, 0xfff4c8, 0).setDepth(90003));
+        return { r, ph: Math.random() * 10 };
+      });
+      const cycle = { t: this.reduce ? 0.35 : 0 };
+      if (!this.reduce) this.tweens.add({ targets: cycle, t: 1, duration: 150000, yoyo: true, repeat: -1, ease: 'Sine.inOut' });
+      this.fx.push((t) => {
+        night?.setAlpha(cycle.t);
+        day.setAlpha(1 - cycle.t * 0.55);
+        for (const s of stars) s.r.setAlpha(cycle.t * (this.reduce ? 0.7 : 0.25 + 0.75 * Math.abs(Math.sin(t / 900 + s.ph))));
+      });
+    }
+    for (const g of mood.glows ?? []) {
+      const img = this.track(this.add.image(g.x, g.y, this.lightTex(g.r, g.color)).setBlendMode(Phaser.BlendModes.ADD).setDepth(90001).setAlpha(g.alpha));
+      if (g.breathe && !this.reduce) this.tweens.add({ targets: img, alpha: g.alpha * 0.72, duration: 2600 + Math.random() * 1800, yoyo: true, repeat: -1, ease: 'Sine.inOut' });
+    }
+  }
+
+  private addMotes(mood: Mood, W: number, H: number) {
+    for (const m of mood.motes ?? []) {
+      const col = Phaser.Display.Color.HexStringToColor(m.color).color;
+      const n = Math.min(m.count, 40);
+      const items = Array.from({ length: n }, () => {
+        const size = m.type === 'dust' ? 1 : 2;
+        const r = this.track(this.add.rectangle(Math.random() * W, Math.random() * H, size, size, col, 0.5).setDepth(90004));
+        return { r, x: r.x, y: r.y, ph: Math.random() * 10, sp: 0.4 + Math.random() };
+      });
+      if (this.reduce) {
+        items.forEach((it) => it.r.setAlpha(m.type === 'dust' ? 0.25 : 0.5));
+        continue;
+      }
+      this.fx.push((t, dt) => {
+        const s = dt / 1000;
+        for (const it of items) {
+          switch (m.type) {
+            case 'fireflies':
+              it.x += Math.sin(t / 1300 + it.ph) * 7 * s;
+              it.y += Math.cos(t / 1700 + it.ph) * 5 * s;
+              it.r.setAlpha(0.1 + 0.8 * Math.max(0, Math.sin(t / 700 + it.ph)));
+              break;
+            case 'embers':
+              it.y -= 6 * it.sp * s;
+              it.x += Math.sin(t / 900 + it.ph) * 4 * s;
+              if (it.y < -4) it.y = H;
+              it.r.setAlpha(0.3 + 0.5 * Math.abs(Math.sin(t / 500 + it.ph)));
+              break;
+            case 'pollen':
+              it.x += (3 + Math.sin(t / 2000 + it.ph) * 3) * it.sp * s;
+              it.y += Math.cos(t / 1800 + it.ph) * 2.5 * s;
+              if (it.x > W + 4) it.x = -4;
+              it.r.setAlpha(0.25 + 0.4 * Math.abs(Math.sin(t / 1100 + it.ph)));
+              break;
+            default:
+              it.x += (1.5 + Math.sin(t / 2600 + it.ph) * 2) * it.sp * s;
+              it.y += Math.cos(t / 3100 + it.ph) * 1.8 * s;
+              if (it.x > W + 4) it.x = -4;
+              it.r.setAlpha(0.12 + 0.22 * Math.abs(Math.sin(t / 1500 + it.ph)));
+          }
+          it.r.setPosition(it.x, it.y);
+        }
+      });
+    }
   }
 
   // ------------------------------------------------------------------ avatars
