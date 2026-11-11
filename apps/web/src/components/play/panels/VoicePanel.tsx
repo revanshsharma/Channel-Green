@@ -245,8 +245,10 @@ export function VoicePanel() {
         }
         sync();
       });
-      room_.on(E.TrackUnsubscribed, (track) => {
+      room_.on(E.TrackUnsubscribed, (track, _pub, participant) => {
         track.detach().forEach((el) => el.remove());
+        // the client may already have detached the element; make sure no sound element is left behind
+        if (track.kind === lk.Track.Kind.Audio) audioHost.current?.querySelectorAll<HTMLElement>(`[data-pid="${CSS.escape(participant.identity)}"]`).forEach((el) => el.remove());
         if (here()) sync();
       });
       for (const ev of [E.ActiveSpeakersChanged, E.TrackMuted, E.TrackUnmuted, E.LocalTrackPublished, E.LocalTrackUnpublished, E.ParticipantDisconnected]) {

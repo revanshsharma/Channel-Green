@@ -71,8 +71,18 @@ Added in the latest pass and looked at in screenshots only (no automated checks)
 - The dusk look: per-room light and colour, vignette, grain (turned down in the latest pass and re-checked in Town Square, Rooftop and Rain Room) and drifting dust, the warm landing page with cream typography and pool-water shimmer. Everything respects the reduced-motion setting.
 - Touch controls (move pad, interact and chat buttons, phones only) and an accessibility pass (focus outlines, labels, Escape closes panels, skip link).
 
+Voice and video, checked with two real Chromium windows against a local LiveKit server in dev mode and fake microphone and camera devices (the repeatable script is `scripts/voice-e2e.mjs`, setup in docs/VOICE.md). All of it passed in the latest run:
+- Nothing asks for the microphone or camera until you press its own button; joining is listen-only and needs a consent tick first.
+- Mic and camera turn on and off with one click, the devices are really released when off, and the other player sees who is speaking, who has the mic on and who has a camera on (and the video is decoding).
+- Volume in the proximity rooms falls with distance.
+- Muted and blocked players are not heard or shown, and come back on unmute or unblock.
+- Closing the panel, pressing Leave voice and closing the tab all stop every track and remove you from the room.
+- Clear messages for a refused token, a blocked microphone and a missing microphone.
+- The token logic and the pure client logic have unit tests.
+
+Voice and video not yet checked: LiveKit Cloud or a self-hosted server on a real network (TURN, firewalls), real microphones and cameras, Safari and Firefox, phones, and many people in one room. The interface still shows as disabled, with the reason, when no LiveKit keys are set.
+
 Built but never run against the real service:
-- Voice and video with LiveKit (needs keys; the interface shows as disabled without them).
 - Supabase sign-in and the database store (the schema is written but has not been applied to a real project).
 - The realtime Dockerfile (written, not built here).
 
@@ -81,14 +91,15 @@ Known rough edges:
 - Touch controls exist but have not been tried on a real phone.
 - Accessibility has had a second pass, not a full audit with a screen reader.
 - The grain was turned down after looking strong on large grass areas; the colours and strengths are still first guesses and were judged by eye.
-- The two-browser checks were run by a script kept outside this repository and are not part of the automated tests.
+- The two-browser checks for voice and video are a script in this repository (`scripts/voice-e2e.mjs`) but need a local LiveKit server and a browser, so they are not part of `npm test`. The earlier checks for confessions, Listening Room and block/mute were run by a script kept outside the repository.
 
 ## Roadmap
 
 Not done yet:
 - [ ] Real deployment (nothing is live; see docs/DEPLOYMENT.md)
 - [ ] Apply and test the Supabase schema with real sign-in
-- [ ] Test voice and video with a real LiveKit project
+- [x] Test voice and video against a local LiveKit server with two browsers and fake devices (`scripts/voice-e2e.mjs`)
+- [ ] Test voice and video with a LiveKit Cloud project, real devices and other browsers (steps in docs/VOICE.md)
 - [ ] Browser end-to-end tests for panels beyond chat
 - [x] Touch controls for phones (first version, needs a real-phone test)
 - [ ] Full keyboard-only and screen-reader audit

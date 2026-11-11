@@ -20,7 +20,7 @@ All `NEXT_PUBLIC_*` values are visible in the browser. Nothing here is secret.
 - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`: turn on the database store. Both needed. Server only.
 - `SUPABASE_JWT_SECRET`: only for older Supabase projects with the legacy signing secret.
 - `MODERATOR_USER_IDS`: comma-separated Supabase user ids that act as guides.
-- `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`: turn on voice and video. All three needed.
+- `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`: turn on voice and video. All three needed. Setup and a manual test: docs/VOICE.md.
 - `EXTRA_BLOCKED_TERMS`: extra filtered words.
 - `MAX_CONNECTIONS_PER_IP`: default 8.
 - `CONFESSION_TTL_DAYS`: how long confessions stay, default 7.
