@@ -11,6 +11,12 @@ import {
   ConfessionIdSchema,
   ConfessionPostSchema,
   DIR_INDEX,
+  ActivitySchema,
+  STRETCH_MS,
+  activityBits,
+  activityBlocked,
+  activityOf,
+  withoutActivity,
   EmoteSendSchema,
   FLAG_MOVING,
   FLAG_SEATED,
@@ -296,6 +302,7 @@ export function createRealtime(cfg: Config, overrides: { store?: Store; voice?: 
     p.name = uniqueName(inst, p);
     p.dir = 'down';
     p.flags = 0;
+    p.actUntil = 0;
     p.moveT = Date.now();
     p.dirty = false;
     p.silenced = false;
@@ -345,6 +352,11 @@ export function createRealtime(cfg: Config, overrides: { store?: Store; voice?: 
       history: inst.history.filter((m) => !m.from || !p.blocks.has(m.from.uid)),
       moderator: p.moderator,
     };
+  }
+
+  /** Sends one player's place and pose to the room right away and reliably, so a change of pose is never lost like a walking step can be. */
+  function pushState(inst: Instance, p: Player) {
+    toRoom(inst, 'world:state', [[p.pid, Math.round(p.x * 10) / 10, Math.round(p.y * 10) / 10, DIR_INDEX[p.dir], p.flags]]);
   }
 
   /** Moves a player to another instance and tells them to rebuild the scene. */
@@ -466,6 +478,7 @@ export function createRealtime(cfg: Config, overrides: { store?: Store; voice?: 
             y: 0,
             dir: 'down',
             flags: 0,
+            actUntil: 0,
             moveT: Date.now(),
             dirty: false,
             blocks,
@@ -478,6 +491,7 @@ export function createRealtime(cfg: Config, overrides: { store?: Store; voice?: 
               chat: new TokenBucket(4, 0.7),
               req: new TokenBucket(3, 0.25),
               emote: new TokenBucket(4, 0.6),
+              activity: new TokenBucket(5, 0.5),
               media: new TokenBucket(6, 0.5),
               any: new TokenBucket(30, 15),
               report: new TokenBucket(3, 1 / 40),
@@ -522,7 +536,8 @@ export function createRealtime(cfg: Config, overrides: { store?: Store; voice?: 
       if (!inst) return;
       const now = Date.now();
       const seated = (p.flags & FLAG_SEATED) !== 0;
-      if (seated && !d.moving && Math.hypot(d.x - p.x, d.y - p.y) < 0.5) return;
+      // a "still here" message from someone seated, sipping tea or lying down changes nothing; walking anywhere ends it
+      if ((seated || activityOf(p.flags)) && !d.moving && Math.hypot(d.x - p.x, d.y - p.y) < 0.5) return;
       const v = validateMove(inst.collision, inst.moveState(p), d.x, d.y, now);
       if (!v.ok) {
         send(p.sid, 'pos:correct', { x: p.x, y: p.y, seq: d.seq });
@@ -532,8 +547,36 @@ export function createRealtime(cfg: Config, overrides: { store?: Store; voice?: 
       p.y = v.y;
       p.dir = d.dir;
       p.flags = d.moving ? FLAG_MOVING : 0;
+      p.actUntil = 0;
       p.moveT = now;
       p.dirty = true;
+    });
+
+    // ------------------------------------------------------------- activities
+
+    on(socket, 'activity', ActivitySchema, 'activity', (p, d, ack) => {
+      const inst = p.instance;
+      if (!inst) return ack(fail('Not in a room.'));
+      const seated = (p.flags & FLAG_SEATED) !== 0;
+      if (d.id === 'none') {
+        p.flags = withoutActivity(p.flags);
+      } else {
+        const why = activityBlocked(d.id, seated);
+        if (why) return ack(fail(why));
+        if (d.id === 'lie') {
+          if (inst.collision.portals.some((x) => rectsOverlap(feetBox(p.x, p.y), { x: x.px.x - 8, y: x.px.y - 8, w: x.px.w + 16, h: x.px.h + 16 }))) return ack(fail('Not in the doorway. Find a quiet corner.'));
+          for (const o of inst.players.values()) if (o !== p && activityOf(o.flags) === 'lie' && Math.hypot(o.x - p.x, o.y - p.y) < 14) return ack(fail('Someone is resting right there.'));
+        }
+        if (activityOf(p.flags) === d.id) {
+          // asking for the same thing again puts it away, so one key does both
+          p.flags = withoutActivity(p.flags);
+        } else p.flags = (p.flags & FLAG_SEATED) | activityBits(d.id);
+        p.actUntil = d.id === 'stretch' && activityOf(p.flags) ? Date.now() + STRETCH_MS : 0;
+      }
+      p.moveT = Date.now();
+      p.dirty = false;
+      pushState(inst, p);
+      ack({ ok: true, flags: p.flags });
     });
 
     // ------------------------------------------------------------- chat
@@ -632,9 +675,12 @@ export function createRealtime(cfg: Config, overrides: { store?: Store; voice?: 
           p.x = sx;
           p.y = sy;
           p.dir = it.dir ?? 'down';
-          p.flags = FLAG_SEATED;
+          // a cup of tea comes along to the seat; anything else is put away
+          p.flags = FLAG_SEATED | (activityOf(p.flags) === 'tea' ? activityBits('tea') : 0);
+          p.actUntil = 0;
           p.moveT = Date.now();
-          p.dirty = true;
+          p.dirty = false;
+          pushState(inst, p);
           result = { kind: 'sit', x: sx, y: sy, dir: p.dir };
           break;
         }
@@ -950,9 +996,16 @@ export function createRealtime(cfg: Config, overrides: { store?: Store; voice?: 
   // ----------------------------------------------------------------- timers
 
   const tick = setInterval(() => {
+    const nowMs = Date.now();
     for (const inst of world.all()) {
       let rows: [string, number, number, number, number][] | null = null;
       for (const p of inst.players.values()) {
+        if (p.actUntil && nowMs >= p.actUntil) {
+          // a stretch ends by itself
+          p.actUntil = 0;
+          p.flags = withoutActivity(p.flags);
+          pushState(inst, p);
+        }
         if (!p.dirty) continue;
         p.dirty = false;
         (rows ??= []).push([p.pid, Math.round(p.x * 10) / 10, Math.round(p.y * 10) / 10, DIR_INDEX[p.dir], p.flags]);

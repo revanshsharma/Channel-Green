@@ -1,5 +1,9 @@
 import {
   FLAG_SEATED,
+  activityBits,
+  activityBlocked,
+  activityOf,
+  type ActivityId,
   INDEX_DIR,
   LIMITS,
   type ChatMessage,
@@ -52,6 +56,8 @@ export interface Snapshot {
   nearby: { label: string; kind: 'object' | 'portal' | 'sit' | 'stand' } | null;
   /** true while you are settled in a seat; drives the quiet seated atmosphere */
   seated: boolean;
+  /** what you are doing right now where you stand (sipping tea, lying down, stretching), if anything */
+  activity: ActivityId | null;
   selected: string | null;
 }
 
@@ -66,6 +72,7 @@ export type SceneEvent =
   | { type: 'effect'; kind: RequestKind; a: string; b: string }
   | { type: 'wish'; pid: string }
   | { type: 'correct'; x: number; y: number }
+  | { type: 'activity'; activity: ActivityId | null }
   | { type: 'seat'; x: number; y: number; dir: 'down' | 'up' | 'left' | 'right' };
 
 const EMPTY_FEATURES: JoinOk['features'] = { voice: false, persistence: 'memory' };
@@ -109,6 +116,7 @@ export class GameSession {
       note: null,
       nearby: null,
       seated: false,
+      activity: null,
       selected: null,
     };
   }
@@ -222,6 +230,7 @@ export class GameSession {
       note: null,
       nearby: null,
       seated: false,
+      activity: null,
       selected: null,
     });
     this.refreshPlayers();
@@ -368,6 +377,10 @@ export class GameSession {
   setSeated(v: boolean) {
     if (this.snap.seated !== v) this.set({ seated: v });
   }
+  /** The scene tells us when your activity starts or ends (it also ends by itself when you walk or a stretch is over). */
+  setActivity(a: ActivityId | null) {
+    if (this.snap.activity !== a) this.set({ activity: a });
+  }
   select(pid: string | null) {
     this.set({ selected: pid, panel: pid ? 'people' : this.snap.panel });
   }
@@ -399,6 +412,20 @@ export class GameSession {
     }
   }
 
+  /** Ask for an activity; asking for the one already going puts it away. 'none' always stops. */
+  async doActivity(id: ActivityId | 'none') {
+    const why = id === 'none' ? null : activityBlocked(id, this.snap.seated);
+    if (why) {
+      this.toast(why, 'info');
+      return;
+    }
+    const r = await this.act<{ flags: number }>('activity', { id });
+    if (!r) return;
+    const now = activityOf(r.flags);
+    if (this.me) this.me.flags = r.flags;
+    this.setActivity(now);
+    this.emitScene({ type: 'activity', activity: now });
+  }
   async say(raw: string, to?: string): Promise<boolean> {
     const text = expandShortcodes(raw).trim().slice(0, LIMITS.chatMax);
     if (!text) return false;
@@ -418,7 +445,7 @@ export class GameSession {
         this.me.x = res.x;
         this.me.y = res.y;
         this.me.dir = res.dir;
-        this.me.flags = FLAG_SEATED;
+        this.me.flags = FLAG_SEATED | (this.snap.activity === 'tea' ? activityBits('tea') : 0);
       }
       this.emitScene({ type: 'seat', x: res.x, y: res.y, dir: res.dir });
     } else if (res.kind === 'panel') {

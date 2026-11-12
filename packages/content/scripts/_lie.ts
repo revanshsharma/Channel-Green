@@ -1,0 +1,13 @@
+import { writeFileSync } from 'node:fs';
+import { PixelBuffer, renderLyingFrames, renderAvatarFrames, randomAvatar, LIE_W, LIE_H, FRAME_W, FRAME_H } from '@channel-green/shared';
+import { registry } from '../src/index';
+import { encodePng } from './preview';
+const l = randomAvatar(registry.avatar, 7);
+const lf = renderLyingFrames(l, registry.avatar);
+const f = renderAvatarFrames(l, registry.avatar);
+const sheet = new PixelBuffer(LIE_W*3+FRAME_W*2+10, LIE_H+FRAME_H);
+sheet.rect(0,0,sheet.w,sheet.h,'#3f7a4f');
+(['lie0','lie1','lie2'] as const).forEach((n,c)=>sheet.blit(lf[`left-${n}` as 'left-lie0'], c*(LIE_W+1), 0));
+sheet.blit(f['left-idle0'], 0, LIE_H+1);
+sheet.blit(f['down-idle0'], FRAME_W+2, LIE_H+1);
+writeFileSync('/workspace/agent/channel-green-work/scratch/lie.png', encodePng(sheet, 10));

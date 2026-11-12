@@ -29,6 +29,8 @@ export interface Player {
   y: number;
   dir: Direction;
   flags: number;
+  /** when a timed activity (a stretch) ends by itself; 0 when none is running */
+  actUntil: number;
   /** server time of the last accepted move */
   moveT: number;
   dirty: boolean;
@@ -37,7 +39,7 @@ export interface Player {
   silenced: boolean;
   joinedAt: number;
   instance: Instance | null;
-  buckets: { move: TokenBucket; chat: TokenBucket; req: TokenBucket; emote: TokenBucket; media: TokenBucket; any: TokenBucket; report: TokenBucket; room: TokenBucket; join: TokenBucket };
+  buckets: { move: TokenBucket; chat: TokenBucket; req: TokenBucket; emote: TokenBucket; activity: TokenBucket; media: TokenBucket; any: TokenBucket; report: TokenBucket; room: TokenBucket; join: TokenBucket };
   abuse: number;
 }
 

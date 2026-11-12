@@ -1,6 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { ACTIVITIES, ACTIVITY_INFO } from '@channel-green/shared';
 import { registry } from '@/lib/registry';
 import { audio } from '@/game/audio';
 import type { Controls } from '@/game/controls';
@@ -195,6 +196,17 @@ export function Hud({ controls }: { controls: Controls }) {
               {s.nearby.label} <span className="hidden text-xs opacity-70 sm:inline">[E]</span>
             </button>
           )}
+          <div className="activity-bar flex flex-wrap items-center justify-center gap-1" role="group" aria-label="Things to do">
+            {ACTIVITIES.map((id) => {
+              const on = s.activity === id;
+              const info = ACTIVITY_INFO[id];
+              return (
+                <button key={id} className={`btn btn-sm ${on ? 'btn-primary' : 'btn-quiet'}`} aria-pressed={on} title={`${on ? info.stop : info.label} (${info.key})`} onClick={() => void game.doActivity(id)}>
+                  {on ? info.stop : info.label} <span className="hidden text-xs opacity-70 sm:inline">[{info.key}]</span>
+                </button>
+              );
+            })}
+          </div>
           <div className="emote-bar flex items-center justify-center gap-1" role="group" aria-label="Emotes">
             {registry.emotes.map((em) => (
               <button key={em.id} className="btn btn-sm btn-quiet shrink-0" title={em.label} aria-label={em.label} onClick={() => game.emote(em.id)}>

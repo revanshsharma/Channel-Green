@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { request } from 'node:http';
 import { io as connect, type Socket } from 'socket.io-client';
 import { registry } from '@channel-green/content';
-import { randomAvatar, type JoinOk, type Registry, type PublicPlayer, type ChatMessage } from '@channel-green/shared';
+import { activityOf, randomAvatar, type JoinOk, type Registry, type PublicPlayer, type ChatMessage } from '@channel-green/shared';
 import { createRealtime } from '../src/server';
 import { loadConfig } from '../src/config';
 
@@ -108,6 +108,33 @@ describe('two clients', () => {
     b.s.close();
     expect((await gone).pid).toBe(start.pid);
     a.s.close();
+  });
+
+  it('shares tea and lying down with the room, refuses nonsense, and ends them on a step', async () => {
+    const a = await client('Elm');
+    const b = await client('Fir');
+    const me = b.joined.me;
+    const rowOf = (rows: [string, number, number, number, number][]) => rows.find((r) => r[0] === me.pid);
+    const tea = once<[string, number, number, number, number][]>(a.s, 'world:state', (rows) => !!rowOf(rows) && activityOf(rowOf(rows)![4]) === 'tea');
+    const r1 = await emit<{ flags: number }>(b.s, 'activity', { id: 'tea' });
+    expect(r1.ok).toBe(true);
+    expect(activityOf(r1.flags)).toBe('tea');
+    await tea;
+    // the same request again puts it away
+    const r2 = await emit<{ flags: number }>(b.s, 'activity', { id: 'tea' });
+    expect(activityOf(r2.flags)).toBeNull();
+    const lie = once<[string, number, number, number, number][]>(a.s, 'world:state', (rows) => !!rowOf(rows) && activityOf(rowOf(rows)![4]) === 'lie');
+    expect((await emit(b.s, 'activity', { id: 'lie' })).ok).toBe(true);
+    await lie;
+    // junk is refused
+    expect((await emit(b.s, 'activity', { id: 'fly' })).ok).toBe(false);
+    // walking ends it
+    const up = once<[string, number, number, number, number][]>(a.s, 'world:state', (rows) => !!rowOf(rows) && activityOf(rowOf(rows)![4]) === null && rowOf(rows)![4] !== undefined && rowOf(rows)![1] !== me.x);
+    await new Promise((r) => setTimeout(r, 120));
+    b.s.emit('move', { x: me.x + 2, y: me.y, dir: 'right', moving: true });
+    await up;
+    a.s.close();
+    b.s.close();
   });
 
   it('keeps blocked players out of each other\'s view of chat', async () => {

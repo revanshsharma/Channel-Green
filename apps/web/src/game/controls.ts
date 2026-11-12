@@ -4,6 +4,8 @@ export class Controls {
   touch = { x: 0, y: 0 };
   private off: (() => void)[] = [];
   onAction: (() => void) | null = null;
+  /** T for tea, L to lie down, X to stretch (pressing the same one again puts it away) */
+  onActivity: ((id: 'tea' | 'lie' | 'stretch') => void) | null = null;
   constructor() {
     const editing = (t: EventTarget | null) => {
       const el = t as HTMLElement | null;
@@ -14,6 +16,11 @@ export class Controls {
       const k = e.key.toLowerCase();
       if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(k)) e.preventDefault();
       if ((k === 'e' || k === 'enter' || k === ' ') && !this.keys.has(k)) this.onAction?.();
+      if (!e.repeat && !this.keys.has(k)) {
+        if (k === 't') this.onActivity?.('tea');
+        else if (k === 'l') this.onActivity?.('lie');
+        else if (k === 'x') this.onActivity?.('stretch');
+      }
       this.keys.add(k);
     };
     const up = (e: KeyboardEvent) => this.keys.delete(e.key.toLowerCase());

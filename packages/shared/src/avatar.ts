@@ -34,8 +34,12 @@ export const SPRITE_H = 28;
 export const FRAME_W = SPRITE_W + 2;
 export const FRAME_H = SPRITE_H + 2;
 /** idle and walk come first (the avatar editor and the landing scene read the first columns); sit0..sit3 are the seated pictures:
- * resting, breathing in, eyes closed, head tilted. */
-export const FRAME_NAMES = ['idle0', 'idle1', 'walk0', 'walk1', 'walk2', 'walk3', 'sit0', 'sit1', 'sit2', 'sit3'] as const;
+ * resting, breathing in, eyes closed, head tilted. cup0..2 hold a cup of tea standing (cup low, lifted, lifted with eyes closed),
+ * scup0..2 the same seated, str0 and str1 are a stretch (arms rising, arms up with a yawn). */
+export const FRAME_NAMES = [
+  'idle0', 'idle1', 'walk0', 'walk1', 'walk2', 'walk3', 'sit0', 'sit1', 'sit2', 'sit3',
+  'cup0', 'cup1', 'cup2', 'scup0', 'scup1', 'scup2', 'str0', 'str1',
+] as const;
 export type FrameName = (typeof FRAME_NAMES)[number];
 
 const OPTIONAL_SLOTS: AvatarSlot[] = ['hair', 'hat', 'face', 'neck'];
@@ -149,6 +153,10 @@ interface FramePose {
   blink?: boolean;
   /** head leans this many pixels sideways */
   tilt?: number;
+  /** what the arms are doing: holding a cup low, lifting it to the lips, rising halfway, or all the way up */
+  arms?: 'cup' | 'sip' | 'half' | 'up';
+  /** mouth open in a yawn */
+  yawn?: boolean;
 }
 
 const POSES: Record<FrameName, FramePose> = {
@@ -162,7 +170,24 @@ const POSES: Record<FrameName, FramePose> = {
   sit1: { bob: -1, stride: 0, armSwing: 0, sit: true },
   sit2: { bob: 0, stride: 0, armSwing: 0, sit: true, blink: true },
   sit3: { bob: 0, stride: 0, armSwing: 0, sit: true, tilt: 1 },
+  cup0: { bob: 0, stride: 0, armSwing: 0, arms: 'cup' },
+  cup1: { bob: 0, stride: 0, armSwing: 0, arms: 'sip' },
+  cup2: { bob: 0, stride: 0, armSwing: 0, arms: 'sip', blink: true },
+  scup0: { bob: 0, stride: 0, armSwing: 0, sit: true, arms: 'cup' },
+  scup1: { bob: 0, stride: 0, armSwing: 0, sit: true, arms: 'sip' },
+  scup2: { bob: 0, stride: 0, armSwing: 0, sit: true, arms: 'sip', blink: true },
+  str0: { bob: 0, stride: 0, armSwing: 0, arms: 'half' },
+  str1: { bob: 0, stride: 0, armSwing: 0, arms: 'up', blink: true, yawn: true },
 };
+
+/** Where the legs, torso and head start (row numbers inside the 16x28 picture). */
+function layout(L: number, view: View, pose: FramePose): { legsTop: number; torsoTop: number; headTop: number } {
+  const sit = !!pose.sit;
+  const sideSit = sit && view === 'side';
+  const legsTop = sit ? SPRITE_H - (sideSit ? 4 : 3) : SPRITE_H - L;
+  const torsoTop = sit ? legsTop - (sideSit ? 7 : 5) + pose.bob : legsTop - 7 + pose.bob;
+  return { legsTop, torsoTop, headTop: torsoTop - 9 };
+}
 
 function renderView(cfg: AvatarConfig, reg: AvatarRegistry, view: View, pose: FramePose): PixelBuffer {
   const buf = new PixelBuffer(SPRITE_W, SPRITE_H);
@@ -180,10 +205,8 @@ function renderView(cfg: AvatarConfig, reg: AvatarRegistry, view: View, pose: Fr
 
   const sit = !!pose.sit;
   const sideSit = sit && view === 'side';
-  const legsTop = sit ? SPRITE_H - (sideSit ? 4 : 3) : SPRITE_H - L;
-  const torsoTop = sit ? legsTop - (sideSit ? 7 : 5) + pose.bob : legsTop - 7 + pose.bob;
+  const { legsTop, torsoTop, headTop } = layout(L, view, pose);
   const tilt = pose.tilt ?? 0;
-  const headTop = torsoTop - 9;
   const originHead = headTop - 4;
   const torsoX = view === 'side' ? 5 : Math.floor((SPRITE_W - T) / 2);
   const torsoW = view === 'side' ? Math.max(6, T - 2) : T;
@@ -209,7 +232,7 @@ function renderView(cfg: AvatarConfig, reg: AvatarRegistry, view: View, pose: Fr
       else col = sit ? (coverage > 0.35 ? bottomRes('C') : skin.main) : j < Math.round(L * coverage) ? bottomRes('C') : skin.main;
       buf.rect(x, y, w, 1, col);
     }
-    if (len > 1) buf.rect(x + w - 1, legsTop, 1, Math.max(0, len - shoeH), j2(bottomRes, skin, coverage, L));
+    if (len > 1) buf.rect(x + w - 1, legsTop, 1, Math.max(0, len - shoeH), j2(bottomRes, skin, coverage));
   };
   // seated: the thigh runs forward from the hip (side view); from the front the knees are drawn after the torso
   if (sideSit) {
@@ -240,14 +263,33 @@ function renderView(cfg: AvatarConfig, reg: AvatarRegistry, view: View, pose: Fr
   // arms (behind the torso in side view is the far arm; near arm drawn after torso)
   const sleeves = top?.sleeves ?? 'short';
   const armLen = 6;
-  const drawArm = (x: number, y: number, w: number) => {
-    for (let j = 0; j < armLen; j++) {
+  const drawArm = (x: number, y: number, w: number, len = armLen) => {
+    for (let j = 0; j < len; j++) {
       const covered = sleeves === 'long' ? j < armLen - 1 : sleeves === 'short' ? j < 2 : false;
       buf.rect(x, y + j, w, 1, covered ? topC.main : skin.main);
     }
     if (sleeves !== 'none') buf.rect(x, y + (sleeves === 'long' ? armLen - 2 : 1), w, 1, topC.shade);
   };
-  if (view !== 'side') {
+  const arms = pose.arms;
+  const raised = arms === 'up' || arms === 'half';
+  // an arm held out or up: sleeve near the shoulder, skin for the hand at the top
+  const drawRaisedArm = (x: number, bottom: number, len: number) => {
+    for (let j = 0; j < len; j++) {
+      const fromShoulder = j;
+      const covered = sleeves === 'long' ? fromShoulder < len - 2 : sleeves === 'short' ? fromShoulder < 2 : false;
+      buf.rect(x, bottom - j, 2, 1, covered ? topC.main : skin.main);
+    }
+  };
+  if (raised && view !== 'side') {
+    const len = arms === 'up' ? 9 : 5;
+    drawRaisedArm(torsoX - 3, torsoTop + 1, len);
+    drawRaisedArm(torsoX + torsoW + 1, torsoTop + 1, len);
+    buf.rect(torsoX - 1, torsoTop + 1, 1, 2, topC.main);
+    buf.rect(torsoX + torsoW, torsoTop + 1, 1, 2, topC.main);
+  } else if ((arms === 'cup' || arms === 'sip') && view !== 'side') {
+    drawArm(torsoX - 2, torsoTop + 1, 2, 3);
+    drawArm(torsoX + torsoW, torsoTop + 1, 2, 3);
+  } else if (view !== 'side') {
     drawArm(torsoX - 2, torsoTop + 1 + (pose.armSwing === -1 ? 1 : pose.armSwing === 1 ? -1 : 0), 2);
     drawArm(torsoX + torsoW, torsoTop + 1 + (pose.armSwing === 1 ? 1 : pose.armSwing === -1 ? -1 : 0), 2);
   }
@@ -259,8 +301,9 @@ function renderView(cfg: AvatarConfig, reg: AvatarRegistry, view: View, pose: Fr
   drawArt(buf, top?.views?.[view], 0, torsoTop, topRes);
 
   if (view === 'side') {
-    const swingX = 7 + pose.armSwing * 2;
-    drawArm(swingX, torsoTop + 1, 2);
+    if (arms === 'cup' || arms === 'sip') drawArm(7, torsoTop + 1, 2, 3);
+    else if (raised) drawRaisedArm(7, torsoTop + 1, arms === 'up' ? 9 : 5);
+    else drawArm(7 + pose.armSwing * 2, torsoTop + 1, 2);
   }
 
   // seated, front view: the knees come forward over the lap
@@ -303,10 +346,65 @@ function renderView(cfg: AvatarConfig, reg: AvatarRegistry, view: View, pose: Fr
   const face = partOf(reg, cfg.face);
   if (face && view !== 'up') drawArt(buf, face.views?.[view], tilt, originHead, resolver(base, '#2a1d1a', '#000000'));
   if (hat) drawArt(buf, hat.views?.[view], tilt, originHead, resolver(base, hatC.main, hatC.shade));
+  if (pose.yawn && view === 'down') buf.rect(7 + tilt, headTop + 7, 2, 2, '#7a3a3a');
+  if (pose.yawn && view === 'side') buf.rect(2 + tilt, headTop + 7, 2, 2, '#7a3a3a');
+  if (arms === 'cup' || arms === 'sip') drawCup(buf, view, arms === 'sip', torsoTop, headTop, torsoX, torsoW, skin.main, topC, sleeves);
   return buf;
 }
 
-function j2(res: (t: string) => string, skin: { main: string }, coverage: number, L: number): string {
+const TEA = '#b8743f';
+const TEA_LIGHT = '#d9a066';
+
+/** The cup and the hands around it, drawn last so it sits in front of the chest or the chin. */
+function drawCup(
+  buf: PixelBuffer,
+  view: View,
+  lifted: boolean,
+  torsoTop: number,
+  headTop: number,
+  torsoX: number,
+  torsoW: number,
+  skin: string,
+  topC: { main: string; shade: string },
+  sleeves: string,
+): void {
+  const sleeve = sleeves === 'none' ? skin : topC.main;
+  const cup = FIXED.W;
+  const cupShade = FIXED.a;
+  if (view === 'down') {
+    const cx = 7;
+    const cy = lifted ? headTop + 7 : torsoTop + 3;
+    buf.rect(cx, cy, 3, 1, TEA);
+    buf.rect(cx, cy + 1, 3, 2, cup);
+    buf.rect(cx, cy + 2, 3, 1, cupShade);
+    buf.set(cx + 1, cy, TEA_LIGHT);
+    // forearms come in from both sides to cradle it
+    const hy = cy + 1;
+    buf.rect(cx - 1, hy, 1, 1, skin);
+    buf.rect(cx + 3, hy, 1, 1, skin);
+    if (lifted) {
+      buf.rect(cx - 3, hy + 1, 3, 1, sleeve);
+      buf.rect(cx + 3, hy + 1, 3, 1, sleeve);
+      buf.set(cx - 2, hy + 1, topC.shade);
+    } else {
+      buf.rect(torsoX, hy, cx - 1 - torsoX, 1, sleeve);
+      buf.rect(cx + 4, hy, torsoX + torsoW - cx - 4, 1, sleeve);
+    }
+  } else if (view === 'side') {
+    const cx = 1;
+    const cy = lifted ? headTop + 6 : torsoTop + 3;
+    buf.rect(cx, cy, 3, 1, TEA);
+    buf.rect(cx, cy + 1, 3, 2, cup);
+    buf.rect(cx, cy + 2, 3, 1, cupShade);
+    buf.set(cx + 1, cy, TEA_LIGHT);
+    const hy = cy + 1;
+    buf.set(cx + 3, hy, skin);
+    buf.rect(cx + 4, hy, 3, 1, sleeve);
+    if (lifted) buf.rect(cx + 5, hy + 1, 2, 1, sleeve);
+  }
+}
+
+function j2(res: (t: string) => string, skin: { main: string }, coverage: number): string {
   // dark inner-edge of the leg: shaded cloth when covered, shaded skin otherwise
   return coverage > 0.5 ? shade(res('C'), -0.14) : shade(skin.main, -0.14);
 }
@@ -340,5 +438,66 @@ export function renderAvatarSheet(input: unknown, reg: AvatarRegistry): PixelBuf
   const frames = renderAvatarFrames(input, reg);
   const sheet = new PixelBuffer(FRAME_W * FRAME_NAMES.length, FRAME_H * DIRECTIONS.length);
   DIRECTIONS.forEach((d, r) => FRAME_NAMES.forEach((n, c) => sheet.blit(frames[`${d}-${n}`], c * FRAME_W, r * FRAME_H)));
+  return sheet;
+}
+
+/** Where the top of a held cup is inside a frame (outline included), so a scene can let steam rise from it. Null when no cup shows. */
+export function cupAnchor(input: unknown, reg: AvatarRegistry, frame: FrameName, dir: Direction): { x: number; y: number } | null {
+  const pose = POSES[frame];
+  if (pose.arms !== 'cup' && pose.arms !== 'sip') return null;
+  if (dir === 'up') return null;
+  const cfg = sanitizeAvatar(input, reg);
+  const L = pick(reg.bodies, cfg.body, 'regular')?.legLength ?? 6;
+  const view: View = dir === 'down' ? 'down' : 'side';
+  const { torsoTop, headTop } = layout(L, view, pose);
+  const lifted = pose.arms === 'sip';
+  const y = (lifted ? (view === 'down' ? headTop + 7 : headTop + 6) : torsoTop + 3) + 1;
+  const x = view === 'down' ? 8 : dir === 'right' ? SPRITE_W - 1 - 2 : 2;
+  return { x: x + 1, y };
+}
+
+// ---------------------------------------------------------------- lying down
+
+export const LIE_NAMES = ['lie0', 'lie1', 'lie2'] as const;
+export type LieName = (typeof LIE_NAMES)[number];
+/** Lying frames are wider than tall, so they live in their own small sheet. Head on the left, or mirrored. */
+export const LIE_W = SPRITE_H + 2;
+export const LIE_H = SPRITE_W + 1 + 2;
+export type LyingFrames = Record<`${'left' | 'right'}-${LieName}`, PixelBuffer>;
+
+/**
+ * Lying on your back, face toward the sky. The standing side picture is turned a quarter round, so every look,
+ * hat and hairstyle carries over. lie0 eyes open, lie1 chest raised (a breath in), lie2 eyes closed.
+ */
+export function renderLyingFrames(input: unknown, reg: AvatarRegistry): LyingFrames {
+  const cfg = sanitizeAvatar(input, reg);
+  const L = pick(reg.bodies, cfg.body, 'regular')?.legLength ?? 6;
+  const out = {} as LyingFrames;
+  for (const name of LIE_NAMES) {
+    const pose: FramePose = { bob: 0, stride: 0, armSwing: 0, blink: name !== 'lie0' };
+    const src = renderView(cfg, reg, 'side', pose);
+    const { torsoTop } = layout(L, 'side', pose);
+    const turned = new PixelBuffer(SPRITE_H, SPRITE_W + 1);
+    for (let y = 0; y < SPRITE_H; y++) {
+      for (let x = 0; x < SPRITE_W; x++) {
+        const c = src.get(x, y);
+        if (c[3] === 0) continue;
+        // a quarter turn: the top of the head goes left and the face looks up at the sky; a breath in lifts the chest a pixel
+        const chest = name === 'lie1' && y >= torsoTop && y < torsoTop + 7 ? 1 : 0;
+        turned.set(y, x + 1 - chest, c);
+      }
+    }
+    const left = turned.outlined('#2a1d1a');
+    out[`left-${name}`] = left;
+    out[`right-${name}`] = left.flippedX();
+  }
+  return out;
+}
+
+/** The lying frames of one look, side by side: columns = LIE_NAMES, rows = left then right. */
+export function renderLyingSheet(input: unknown, reg: AvatarRegistry): PixelBuffer {
+  const frames = renderLyingFrames(input, reg);
+  const sheet = new PixelBuffer(LIE_W * LIE_NAMES.length, LIE_H * 2);
+  (['left', 'right'] as const).forEach((d, r) => LIE_NAMES.forEach((n, c) => sheet.blit(frames[`${d}-${n}`], c * LIE_W, r * LIE_H)));
   return sheet;
 }

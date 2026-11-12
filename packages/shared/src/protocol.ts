@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { AvatarConfigSchema, type AvatarConfig, type Direction } from './avatar';
+import { ACTIVITIES } from './activity';
 import type { MediaChannel, MediaKind, MediaState } from './media';
 
 /** Limits shared by the server (authoritative) and the client (so the UI can say no politely first). */
@@ -114,6 +115,7 @@ export type MovePayload = z.infer<typeof MoveSchema>;
 
 export const ChatSchema = z.object({ text: z.string().max(2000), to: pid.optional(), cid: z.string().max(40).optional() });
 export const EmoteSendSchema = z.object({ id: z.string().max(32) });
+export const ActivitySchema = z.object({ id: z.enum([...ACTIVITIES, 'none']) });
 export const InteractSchema = z.object({ object: z.number().int().min(0).max(1000) });
 export const PortalUseSchema = z.object({ portal: z.string().max(48) });
 export const RequestSendSchema = z.object({
@@ -162,6 +164,7 @@ export interface ClientToServer {
   move: (p: MovePayload) => void;
   'chat:send': (p: z.infer<typeof ChatSchema>, ack?: Ack) => void;
   emote: (p: z.infer<typeof EmoteSendSchema>) => void;
+  activity: (p: z.infer<typeof ActivitySchema>, ack?: Ack<{ flags: number }>) => void;
   interact: (p: z.infer<typeof InteractSchema>, ack?: Ack<{ result: InteractResult }>) => void;
   'portal:use': (p: z.infer<typeof PortalUseSchema>, ack?: Ack) => void;
   'request:send': (p: z.infer<typeof RequestSendSchema>, ack?: Ack) => void;

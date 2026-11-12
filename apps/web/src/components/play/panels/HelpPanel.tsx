@@ -5,6 +5,7 @@ export function HelpPanel() {
     <div className="prose-cg space-y-3 text-sm">
       <p><strong>Walk</strong> with WASD or the arrow keys. On a phone, use the arrows at the bottom left.</p>
       <p><strong>Interact</strong> with E, Space or the button that appears near things. Sit on benches, read signs, step onto glowing doors to go to another room.</p>
+      <p><strong>Little things to do</strong> where you stand. T sips a cup of tea (standing or sitting), L lies down to rest, X stretches. Press the same key again, or walk, to stop. Everyone in the room sees it. They are also buttons above the emotes.</p>
       <p><strong>Chat</strong> by pressing Enter. Click a name to wave, hug, ask to chat, mute, block or report.</p>
       <p><strong>Emotes</strong> are the little faces at the bottom.</p>
       <p><strong>Sound</strong> is off until you turn it on. <strong>Voice and video</strong> only start after you say yes.</p>

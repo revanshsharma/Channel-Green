@@ -6,7 +6,19 @@ import {
   FRAME_NAMES,
   FRAME_W,
   DIRECTIONS,
+  LIE_H,
+  LIE_NAMES,
+  LIE_W,
   PLAYER_SPEED,
+  STRETCH_MS,
+  activityOf,
+  cupAnchor,
+  lieFrame,
+  renderLyingSheet,
+  stretchFrame,
+  teaFrame,
+  type ActivityId,
+  type FrameName,
   TILE,
   approach,
   findSeat,
@@ -55,6 +67,16 @@ interface Avatar {
   dir: Direction;
   texKey: string;
   role: PublicPlayer['role'];
+  /** what the look is made of, kept so the lying pictures and the steam anchor can be made from it */
+  look: unknown;
+  /** the activity being shown, when it began (ms), and how far along getting down or up we are (0 on your feet, 1 lying) */
+  act: ActivityId | null;
+  actAt: number;
+  lieK: number;
+  /** which way the head points while lying */
+  lieSide: 'left' | 'right';
+  lyingShown: boolean;
+  steam?: Phaser.GameObjects.Rectangle[];
 }
 
 const FONT = '"Pixelify Sans", "Jost", system-ui, sans-serif';
@@ -64,6 +86,9 @@ const SIT_IN = 0.6;
 const SIT_OUT = 0.4;
 /** pixels the sprite settles into the cushion once seated */
 const SIT_SINK = 1;
+/** seconds to get down and to get up again when lying */
+const LIE_IN = 0.7;
+const LIE_OUT = 0.5;
 const GLIDE_SPEED = PLAYER_SPEED * 0.55;
 const SEAT_PETALS = ['#ffc9a3', '#f3e3b3', '#cdb8ea', '#ff9a6a'];
 
@@ -91,6 +116,10 @@ export class WorldScene extends Phaser.Scene {
   private offX = 0;
   private offY = 0;
   private mySitK = 0;
+  private myLieK = 0;
+  /** what you are doing right now where you stand; the server has the same answer */
+  private activity: ActivityId | null = null;
+  private anchors = new Map<string, { x: number; y: number } | null>();
   private seatPetals: { r: Phaser.GameObjects.Rectangle; age: number; life: number; ox: number; ph: number }[] = [];
   private lastSend = 0;
   private lastSentMoving = false;
@@ -125,6 +154,9 @@ export class WorldScene extends Phaser.Scene {
     this.prompt.setResolution(this.textRes());
     this.unsub = this.session.onScene((e) => this.onEvent(e));
     this.controls.onAction = () => this.act();
+    this.controls.onActivity = (id) => {
+      if (this.ready && this.map && !this.seatGlide) void this.session.doActivity(id);
+    };
     this.input.on('pointerdown', (p: Phaser.Input.Pointer, over: Obj[]) => {
       if (over.length) return;
       this.session.select(null);
@@ -141,6 +173,7 @@ export class WorldScene extends Phaser.Scene {
         portals: () => this.col?.portals.map((p) => ({ id: p.id, label: p.label, to: p.to, x: p.px.x + p.px.w / 2, y: p.px.y + p.px.h / 2 })) ?? [],
         controls: this.controls,
         session: this.session,
+        looks: () => [...this.avatars.values()].map((a) => ({ pid: a.pid, act: a.act, lieK: a.lieK, tex: a.sprite.texture.key, frame: a.sprite.frame.name, steam: a.steam?.filter((r) => r.visible).length ?? 0 })),
       };
     }
     if (!this.pendingJoin && this.session.lastJoin) this.pendingJoin = this.session.lastJoin;
@@ -155,6 +188,15 @@ export class WorldScene extends Phaser.Scene {
   private cleanup() {
     this.unsub?.();
     this.controls.onAction = null;
+    this.controls.onActivity = null;
+  }
+
+  /** Change what you are doing. Stopping is also told to the server so everyone else sees it end. */
+  private setMyActivity(a: ActivityId | null, tell = false) {
+    if (this.activity === a) return;
+    this.activity = a;
+    this.session.setActivity(a);
+    if (tell && !a) void this.session.doActivity('none');
   }
 
   /** Leave room under the HUD (top bar and emote bar) so portal labels and the floor are never hidden behind it. */
@@ -219,8 +261,14 @@ export class WorldScene extends Phaser.Scene {
         this.seated = false;
         this.seatGlide = null;
         this.session.setSeated(false);
+        this.setMyActivity(null, true);
+        break;
+      case 'activity':
+        this.activity = e.activity;
         break;
       case 'seat':
+        // a cup of tea comes along to the seat, anything else is put away
+        if (this.activity !== 'tea') this.setMyActivity(null);
         this.seated = true;
         if (this.reduce || Math.hypot(e.x - this.myX, e.y - this.myY) < 0.5) {
           this.myX = e.x;
@@ -301,6 +349,10 @@ export class WorldScene extends Phaser.Scene {
     this.seatGlide = null;
     this.offX = this.offY = 0;
     this.mySitK = 0;
+    this.myLieK = 0;
+    this.anchors.clear();
+    this.activity = activityOf(j.me.flags);
+    this.session.setActivity(this.activity);
     this.session.setSeated(this.seated);
     this.moving = false;
     this.portalLock = this.time.now + 1600;
@@ -575,6 +627,16 @@ export class WorldScene extends Phaser.Scene {
     return key;
   }
 
+  /** The lying pictures of one look, made the first time someone lies down. */
+  private lieFor(texKey: string, look: unknown): string {
+    const key = `lie:${texKey}`;
+    if (!this.textures.exists(key)) {
+      const tex = this.textures.addCanvas(key, bufToCanvas(renderLyingSheet(look, registry.avatar)));
+      if (tex) (['left', 'right'] as const).forEach((d, r) => LIE_NAMES.forEach((n, c) => tex.add(`${d}-${n}`, 0, c * LIE_W, r * LIE_H, LIE_W, LIE_H)));
+    }
+    return key;
+  }
+
   private addAvatar(p: PublicPlayer, isMe = false) {
     if (this.avatars.has(p.pid) || !this.map) return;
     const texKey = this.avatarFor(p);
@@ -604,6 +666,12 @@ export class WorldScene extends Phaser.Scene {
       dir: p.dir,
       texKey,
       role: p.role,
+      look: p.avatar,
+      act: null,
+      actAt: 0,
+      lieK: 0,
+      lieSide: p.dir === 'right' ? 'right' : 'left',
+      lyingShown: false,
     });
   }
 
@@ -613,6 +681,7 @@ export class WorldScene extends Phaser.Scene {
     a.bubble?.destroy();
     a.glyph?.destroy();
     a.glow?.destroy();
+    a.steam?.forEach((r) => r.destroy());
   }
 
   private removeAvatar(pid: string) {
@@ -671,6 +740,10 @@ export class WorldScene extends Phaser.Scene {
 
   act() {
     if (!this.ready || !this.map) return;
+    if (this.activity === 'lie') {
+      this.setMyActivity(null, true);
+      return;
+    }
     if (this.seated) {
       if (!this.seatGlide) this.standUp(...this.facingVector());
       return;
@@ -710,12 +783,13 @@ export class WorldScene extends Phaser.Scene {
     this.nearIndex = near?.index ?? -1;
     const pad = this.col.portals.find((p) => Math.hypot(p.px.x + p.px.w / 2 - this.myX, p.px.y + p.px.h / 2 - this.myY) < 22);
     this.nearPortal = pad?.id ?? '';
-    const standing = this.seated && !this.seatGlide && this.mySitK >= 1;
-    const label = standing ? 'Stand up' : this.seated ? '' : pad ? `Go to ${pad.label}` : near?.label ?? '';
+    const lying = this.activity === 'lie';
+    const standing = lying || (this.seated && !this.seatGlide && this.mySitK >= 1);
+    const label = lying ? 'Get up' : standing ? 'Stand up' : this.seated ? '' : pad ? `Go to ${pad.label}` : near?.label ?? '';
     const kind = standing ? 'stand' : pad ? 'portal' : near?.sit ? 'sit' : 'object';
     this.session.setNearby(label ? { label, kind } : null);
     if (label) {
-      const lift = this.seated ? 8 : 14;
+      const lift = lying ? LIE_H + 10 - FRAME_H : this.seated ? 8 : 14;
       this.prompt.setText(`E  ${label}`).setPosition(Math.round(this.myX + this.offX), Math.round(this.myY + this.offY) - FRAME_H - lift).setVisible(true);
       this.prompt.setAlpha(this.seated ? 0.7 : 1);
     } else this.prompt.setVisible(false);
@@ -736,6 +810,13 @@ export class WorldScene extends Phaser.Scene {
     let dx = v.x;
     let dy = v.y;
     const wants = dx !== 0 || dy !== 0;
+    // walking away ends tea, a stretch or a rest; while getting up from the ground you wait for your feet
+    if (wants && this.activity) this.setMyActivity(null, true);
+    if (this.myLieK > 0.02) {
+      this.moving = false;
+      this.syncMe();
+      return;
+    }
     if (this.seatGlide) {
       if (wants) {
         // you changed your mind on the way: land on the seat and get up from there
@@ -829,6 +910,7 @@ export class WorldScene extends Phaser.Scene {
         this.offY = -oy;
         this.seated = false;
         this.session.setSeated(false);
+        this.setMyActivity(null);
         this.session.move(this.myX, this.myY, this.myDir, false, ++this.seq);
         return;
       }
@@ -842,6 +924,7 @@ export class WorldScene extends Phaser.Scene {
     for (const a of this.avatars.values()) {
       const mine = a.pid === myPid;
       let gliding = mine && !!this.seatGlide;
+      let theirAct: ActivityId | null = null;
       if (!mine) {
         const p = this.session.players.get(a.pid);
         if (p) {
@@ -867,12 +950,28 @@ export class WorldScene extends Phaser.Scene {
             a.dir = p.dir;
           }
           a.moving = gliding || (p.flags & FLAG_MOVING) !== 0 || dist > 0.6;
+          theirAct = activityOf(p.flags);
           if (seatedNow && !a.seated) a.seat = null;
           a.seated = seatedNow;
           a.role = p.role;
           if (seatedNow && !a.seat) a.seat = findSeat(this.map, registry.furniture, p.x, p.y);
         }
       } else if (this.seated && !a.seat) a.seat = findSeat(this.map, registry.furniture, this.seatGlide?.x ?? this.myX, this.seatGlide?.y ?? this.myY);
+
+      // what they are doing: yours is known here, theirs comes with their position
+      const act = mine ? this.activity : theirAct;
+      if (act !== a.act) {
+        a.act = act;
+        a.actAt = time;
+        if (act === 'lie') a.lieSide = a.dir === 'right' ? 'right' : 'left';
+      }
+      if (mine && act === 'stretch' && time - a.actAt > STRETCH_MS + 150) this.setMyActivity(null);
+      const wantLie = act === 'lie' && !a.seated && !a.moving && !gliding;
+      if (this.reduce) a.lieK = wantLie ? 1 : 0;
+      else a.lieK = Math.min(1, Math.max(0, a.lieK + (wantLie ? dt / LIE_IN : -dt / LIE_OUT)));
+      if (mine) this.myLieK = a.lieK;
+      const lk = smoothstep(a.lieK);
+      const lyingNow = a.lieK >= 0.55;
 
       // sit/stand ramp: slow in, a touch quicker out; nothing eased when motion is reduced
       const want = a.seated && !gliding ? 1 : 0;
@@ -883,15 +982,37 @@ export class WorldScene extends Phaser.Scene {
       const e = smoothstep(a.sitK);
 
       let frame: string;
-      if (a.sitK >= 0.5) frame = a.sitK >= 1 ? seatedFrame(time, a.phase, this.reduce) : 'sit0';
-      else frame = a.moving ? `walk${Math.floor(time / 125) % 4}` : `idle${Math.floor(time / 600) % 2}`;
+      if (a.lieK > 0) frame = 'sit0';
+      else if (a.sitK >= 0.5) frame = a.sitK >= 1 ? (a.act === 'tea' && !a.moving ? teaFrame(time, a.phase, this.reduce, true) : seatedFrame(time, a.phase, this.reduce)) : 'sit0';
+      else if (a.moving) frame = `walk${Math.floor(time / 125) % 4}`;
+      else if (a.act === 'tea') frame = teaFrame(time, a.phase, this.reduce, false);
+      else if (a.act === 'stretch') frame = stretchFrame(time - a.actAt, this.reduce);
+      else frame = `idle${Math.floor(time / 600) % 2}`;
       const x = Math.round(a.x);
       const y = Math.round(a.y);
       // sink onto the cushion; a one pixel dip halfway through gives the settle
       const dip = this.reduce ? 0 : Math.sin(Math.PI * e) * 1.4;
-      const sy = y + Math.round(e * SIT_SINK + dip);
+      const sy = y + Math.round(e * SIT_SINK + dip) + Math.round(lk * 2);
       const depth = a.sitK > 0 ? seatedDepth(a.seat, y) : y;
-      a.sprite.setPosition(x, sy).setFrame(`${a.dir}-${frame}`).setDepth(depth);
+      if (lyingNow) {
+        // flat on the ground: the sideways pictures, head toward the side you were facing
+        if (!a.lyingShown) {
+          a.lyingShown = true;
+          a.sprite.setTexture(this.lieFor(a.texKey, a.look)).setOrigin(0.5, 1);
+        }
+        a.sprite.setFrame(`${a.lieSide}-${lieFrame(time, a.phase, this.reduce)}`).setPosition(x, y + 1).setDepth(depth);
+        const hit = a.sprite.input?.hitArea as Phaser.Geom.Rectangle | undefined;
+        hit?.setSize(a.sprite.width, a.sprite.height);
+      } else {
+        if (a.lyingShown) {
+          a.lyingShown = false;
+          a.sprite.setTexture(a.texKey).setOrigin(0.5, 1 - 1 / FRAME_H);
+          const hit = a.sprite.input?.hitArea as Phaser.Geom.Rectangle | undefined;
+          hit?.setSize(FRAME_W, FRAME_H);
+        }
+        a.sprite.setPosition(x, sy).setFrame(`${a.dir}-${frame}`).setDepth(depth);
+      }
+      this.updateSteam(a, time, x, sy, frame, depth);
 
       // a warm pool of light under whoever is sitting
       if (a.sitK > 0 && !a.glow) {
@@ -908,7 +1029,8 @@ export class WorldScene extends Phaser.Scene {
       }
 
       // the sitting picture is shorter, so the name and bubbles come down with it
-      const top = y - FRAME_H + Math.round(e * 5);
+      const standTop = y - FRAME_H + Math.round(e * 5);
+      const top = Math.round(standTop + (y - LIE_H - 1 - standTop) * lk);
       a.name.setPosition(x, top - 1).setDepth(a.seat ? Math.max(depth, a.seat.furnitureDepth) + 1 : y + 1);
       if (a.role !== 'player') a.name.setColor(a.role === 'guide' ? '#e8955a' : '#f1e3c1');
       if (a.bubble) {
@@ -927,6 +1049,32 @@ export class WorldScene extends Phaser.Scene {
         }
       }
     }
+  }
+
+  /** Little wisps of steam over a cup, so a sip of tea can be seen from across the room. Still pictures only when motion is reduced. */
+  private updateSteam(a: Avatar, time: number, x: number, y: number, frame: string, depth: number) {
+    const cup = a.act === 'tea' && !a.lyingShown && !this.reduce && (frame.startsWith('cup') || frame.startsWith('scup'));
+    if (!cup) {
+      a.steam?.forEach((r) => r.setVisible(false));
+      return;
+    }
+    const key = `${a.texKey}|${frame}|${a.dir}`;
+    if (!this.anchors.has(key)) this.anchors.set(key, cupAnchor(a.look, registry.avatar, frame as FrameName, a.dir));
+    const at = this.anchors.get(key);
+    if (!at) {
+      a.steam?.forEach((r) => r.setVisible(false));
+      return;
+    }
+    if (!a.steam) a.steam = [0, 1, 2].map(() => this.add.rectangle(0, 0, 1, 2, 0xfffaf0, 1).setAlpha(0).setVisible(false));
+    const left = x - FRAME_W / 2 + at.x;
+    const top = y - (FRAME_H - 1) + at.y;
+    a.steam.forEach((r, i) => {
+      const age = (((time + a.phase) / 2600 + i / 3) % 1 + 1) % 1;
+      const rise = age * 10;
+      const sway = Math.round(Math.sin(age * 7 + i * 2.1) * 1.3);
+      r.setPosition(Math.round(left) + sway + (i - 1), Math.round(top - 2 - rise)).setDepth(depth + 1).setVisible(true);
+      r.setAlpha(Math.sin(Math.PI * age) * 0.85);
+    });
   }
 
   /** A soft round glow, drawn once and shared. */
