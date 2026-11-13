@@ -207,8 +207,11 @@ export class PaintFx {
   private splat(x: number, y: number, color: number, seed: number, stay: number, fade: number) {
     const s = this.scene;
     const g = this.own(s.add.graphics().setDepth(TOP + 1).setPosition(Math.round(x), Math.round(y)));
+    const blobs = blobRects(seed, 4);
+    g.fillStyle(0x0b1f15, 0.4);
+    for (const [rx, ry, w, h] of blobs) g.fillRect(rx - 1, ry - 1, w + 2, h + 2);
     g.fillStyle(color, 0.95);
-    for (const [rx, ry, w, h] of blobRects(seed, 4)) g.fillRect(rx, ry, w, h);
+    for (const [rx, ry, w, h] of blobs) g.fillRect(rx, ry, w, h);
     g.fillStyle(0xffffff, 0.5).fillRect(-1, -1, 1, 1);
     this.wallSplats.push(g);
     if (this.wallSplats.length > MAX_WALL_SPLATS) this.wallSplats.shift()?.destroy();

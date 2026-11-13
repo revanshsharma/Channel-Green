@@ -184,6 +184,9 @@ export class WorldScene extends Phaser.Scene {
     this.controls.onActivity = (id) => {
       if (this.ready && this.map && !this.seatGlide) void this.session.doActivity(id);
     };
+    this.input.on('pointermove', (p: Phaser.Input.Pointer) => {
+      if (!p.wasTouch) this.pointerSeen = true;
+    });
     this.input.on('pointerdown', (p: Phaser.Input.Pointer, over: Obj[]) => {
       // in the yard a click or tap is a shot, wherever it lands
       if (this.playing()) {
