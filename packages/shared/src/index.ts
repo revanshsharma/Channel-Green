@@ -7,5 +7,7 @@ export * from './text';
 export * from './media';
 export * from './seat';
 export * from './activity';
+export * from './vending';
+export * from './paint';
 export * from './protocol';
 export * from './tokens';

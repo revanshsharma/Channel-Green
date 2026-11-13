@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { request } from 'node:http';
 import { io as connect, type Socket } from 'socket.io-client';
 import { registry } from '@channel-green/content';
-import { activityOf, randomAvatar, type JoinOk, type Registry, type PublicPlayer, type ChatMessage } from '@channel-green/shared';
+import { activityOf, paintTargets, paintZone, zonePx, PAINT_FIRE_GAP_MS, VEND_GAP_MS, randomAvatar, type JoinOk, type Registry, type PublicPlayer, type ChatMessage } from '@channel-green/shared';
 import { createRealtime } from '../src/server';
 import { loadConfig } from '../src/config';
 
@@ -183,4 +183,130 @@ describe('two clients', () => {
     expect(v.reason).toBeTruthy();
     a.s.close();
   });
+});
+
+describe('vending machine and paint yard', () => {
+  // a fresh server: the sign-in limits of the first group are per address and already used up
+  beforeAll(async () => {
+    await rt.close();
+    rt = createRealtime(loadConfig({ NODE_ENV: 'test', ALLOWED_ORIGINS: '*' }));
+    base = `http://127.0.0.1:${await rt.listen(0)}`;
+  });
+
+  const walked = new WeakMap<Socket, { x: number; y: number }>();
+  /** Walks a client in small, believable steps so the server's speed check is happy. */
+  async function walkTo(c: Awaited<ReturnType<typeof client>>, tx: number, ty: number) {
+    const here = (walked.get(c.s) ?? c.joined.me) as { x: number; y: number };
+    let { x, y } = here;
+    for (let i = 0; i < 60 && (Math.abs(tx - x) > 1 || Math.abs(ty - y) > 1); i++) {
+      const dx = Math.max(-36, Math.min(36, tx - x));
+      const dy = Math.abs(dx) > 0.5 ? 0 : Math.max(-36, Math.min(36, ty - y));
+      await new Promise((r) => setTimeout(r, 480));
+      c.s.emit('move', { x: x + dx, y: y + dy, dir: dx > 0 ? 'right' : dx < 0 ? 'left' : dy > 0 ? 'down' : 'up', moving: true });
+      x += dx;
+      y += dy;
+    }
+    await new Promise((r) => setTimeout(r, 150));
+    walked.set(c.s, { x, y });
+    return { x, y };
+  }
+  const flagsFor = (rows: [string, number, number, number, number][], pid: string) => rows.find((r) => r[0] === pid)?.[4];
+  const machineIndex = reg.maps['town-square'].objects.findIndex((o) => o.furniture === 'vending-machine');
+
+  it('sells a snack from the vending machine, shows it to the room, and refuses nonsense', async () => {
+    const a = await client('Hazel');
+    const b = await client('Ivy');
+    // too far from the machine
+    expect((await emit(b.s, 'vend:buy', { object: machineIndex, item: 'cola' })).ok).toBe(false);
+    // not a machine
+    expect((await emit(b.s, 'vend:buy', { object: 1, item: 'cola' })).ok).toBe(false);
+    const at = await walkTo(b, 480, 176);
+    expect(at.x).toBe(480);
+    const cola = once<[string, number, number, number, number][]>(a.s, 'world:state', (rows) => activityOf(flagsFor(rows, b.joined.me.pid) ?? 0) === 'cola');
+    const drop = once<{ pid: string; item: string }>(a.s, 'vend:drop', (v) => v.pid === b.joined.me.pid);
+    // items you can't buy
+    expect((await emit(b.s, 'vend:buy', { object: machineIndex, item: 'tea' })).ok).toBe(false);
+    expect((await emit(b.s, 'vend:buy', { object: machineIndex, item: 'diamond' })).ok).toBe(false);
+    const ok = await emit<{ flags: number }>(b.s, 'vend:buy', { object: machineIndex, item: 'cola' });
+    expect(ok.ok).toBe(true);
+    expect(activityOf(ok.flags)).toBe('cola');
+    expect((await drop).item).toBe('cola');
+    await cola;
+    // a second pick straight away has to wait
+    expect((await emit(b.s, 'vend:buy', { object: machineIndex, item: 'chips' })).ok).toBe(false);
+    // nobody can hand themselves a vended item through the activity door
+    expect((await emit(b.s, 'activity', { id: 'chips' })).ok).toBe(false);
+    await new Promise((r) => setTimeout(r, VEND_GAP_MS + 1200));
+    const again = await emit<{ flags: number }>(b.s, 'vend:buy', { object: machineIndex, item: 'chips' });
+    expect(again.ok, again.error).toBe(true);
+    expect(activityOf(again.flags)).toBe('chips');
+    a.s.close();
+    b.s.close();
+  }, 30000);
+
+  it('runs the paint yard: opt in, tag a friend, plink a target, wash off, and refuse the rest', async () => {
+    const a = await client('Juniper', { map: 'paint-yard' });
+    const b = await client('Kestrel', { map: 'paint-yard' });
+    expect(a.joined.room.mapId).toBe('paint-yard');
+    const map = reg.maps['paint-yard'];
+    const zone = zonePx(paintZone(map)!);
+    // outside the yard nothing works
+    expect(zone.x).toBeGreaterThan(a.joined.me.x);
+    expect((await emit(a.s, 'paint:join')).ok).toBe(false);
+    expect((await emit(a.s, 'paint:fire', { a: 0 })).ok).toBe(false);
+    // both step onto the boards, side by side, so a shot to the right reaches the friend
+    const row = a.joined.me.y;
+    const [pa, pb] = await Promise.all([walkTo(a, zone.x + 20, row), walkTo(b, zone.x + 68, row)]);
+    expect([pa.x, pb.x]).toEqual([zone.x + 20, zone.x + 68]);
+    // only people who joined can shoot
+    expect((await emit(a.s, 'paint:fire', { a: 0 })).ok).toBe(false);
+    const ja = await emit<{ c: number }>(a.s, 'paint:join');
+    const jb = await emit<{ c: number }>(b.s, 'paint:join');
+    expect(ja.ok && jb.ok).toBe(true);
+    expect(ja.c).not.toBe(jb.c);
+
+    // a tags b: b wears a's colour, and everyone hears about it
+    type PaintState = { pid: string; paint: { c: number; splats: [number, number, number][] } | null };
+    const tagged = once<PaintState>(a.s, 'paint:state', (v) => v.pid === b.joined.me.pid && (v.paint?.splats.length ?? 0) > 0);
+    const shot = once<{ hit: string; victim?: string; c: number }>(b.s, 'paint:shot', (v) => v.hit === 'player');
+    const fired = await emit<{ score: number }>(a.s, 'paint:fire', { a: 0 });
+    expect(fired.ok).toBe(true);
+    const st = await tagged;
+    expect(st.paint!.splats).toHaveLength(1);
+    expect(st.paint!.splats[0][0]).toBe(ja.c);
+    const seen = await shot;
+    expect(seen.victim).toBe(b.joined.me.pid);
+    expect(seen.c).toBe(ja.c);
+    // the marker needs a moment between shots
+    expect((await emit(a.s, 'paint:fire', { a: 0 })).ok).toBe(false);
+    // a wild angle is junk
+    expect((await emit(a.s, 'paint:fire', { a: 99 })).ok).toBe(false);
+
+    // b washes off
+    const clean = once<PaintState>(a.s, 'paint:state', (v) => v.pid === b.joined.me.pid && v.paint?.splats.length === 0);
+    expect((await emit(b.s, 'paint:wash')).ok).toBe(true);
+    await clean;
+
+    // a walks under the first bullseye and plinks it
+    const t = paintTargets(map)[0];
+    await walkTo(a, t.x + t.w / 2, 190);
+    const score = once<{ score: number }>(a.s, 'paint:score', (v) => v.score === 1);
+    await new Promise((r) => setTimeout(r, PAINT_FIRE_GAP_MS + 50));
+    const hit = await emit<{ score: number }>(a.s, 'paint:fire', { a: -Math.PI / 2 });
+    expect(hit.ok).toBe(true);
+    expect(hit.score).toBe(1);
+    await score;
+    // a miss into the wall scores nothing
+    await new Promise((r) => setTimeout(r, PAINT_FIRE_GAP_MS + 50));
+    const miss = await emit<{ score: number }>(a.s, 'paint:fire', { a: Math.PI });
+    expect(miss.score).toBe(1);
+
+    // stepping off the yard puts the marker down
+    const out = once<PaintState>(b.s, 'paint:state', (v) => v.pid === a.joined.me.pid && v.paint === null);
+    expect((await emit(a.s, 'paint:leave')).ok).toBe(true);
+    await out;
+    expect((await emit(a.s, 'paint:fire', { a: 0 })).ok).toBe(false);
+    a.s.close();
+    b.s.close();
+  }, 40000);
 });

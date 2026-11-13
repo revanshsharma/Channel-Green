@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { AvatarConfigSchema, type AvatarConfig, type Direction } from './avatar';
-import { ACTIVITIES } from './activity';
+import { OWN_ACTIVITIES } from './activity';
+import type { Splat } from './paint';
 import type { MediaChannel, MediaKind, MediaState } from './media';
 
 /** Limits shared by the server (authoritative) and the client (so the UI can say no politely first). */
@@ -31,6 +32,13 @@ export interface PublicPlayer {
   dir: Direction;
   flags: number;
   role: 'player' | 'host' | 'guide';
+  /** present only while they have joined the paintball yard: their paint colour and the colour tags on them */
+  paint?: PaintState;
+}
+
+export interface PaintState {
+  c: number;
+  splats: Splat[];
 }
 
 export type RoomMode = 'public' | 'invite';
@@ -115,7 +123,9 @@ export type MovePayload = z.infer<typeof MoveSchema>;
 
 export const ChatSchema = z.object({ text: z.string().max(2000), to: pid.optional(), cid: z.string().max(40).optional() });
 export const EmoteSendSchema = z.object({ id: z.string().max(32) });
-export const ActivitySchema = z.object({ id: z.enum([...ACTIVITIES, 'none']) });
+export const ActivitySchema = z.object({ id: z.enum([...OWN_ACTIVITIES, 'none']) });
+export const VendBuySchema = z.object({ object: z.number().int().min(0).max(1000), item: z.string().max(16) });
+export const PaintFireSchema = z.object({ a: z.number().finite().min(-7).max(7) });
 export const InteractSchema = z.object({ object: z.number().int().min(0).max(1000) });
 export const PortalUseSchema = z.object({ portal: z.string().max(48) });
 export const RequestSendSchema = z.object({
@@ -166,6 +176,11 @@ export interface ClientToServer {
   emote: (p: z.infer<typeof EmoteSendSchema>) => void;
   activity: (p: z.infer<typeof ActivitySchema>, ack?: Ack<{ flags: number }>) => void;
   interact: (p: z.infer<typeof InteractSchema>, ack?: Ack<{ result: InteractResult }>) => void;
+  'vend:buy': (p: z.infer<typeof VendBuySchema>, ack?: Ack) => void;
+  'paint:join': (ack?: Ack<{ c: number }>) => void;
+  'paint:leave': (ack?: Ack) => void;
+  'paint:fire': (p: z.infer<typeof PaintFireSchema>, ack?: Ack<{ score: number }>) => void;
+  'paint:wash': (ack?: Ack) => void;
   'portal:use': (p: z.infer<typeof PortalUseSchema>, ack?: Ack) => void;
   'request:send': (p: z.infer<typeof RequestSendSchema>, ack?: Ack) => void;
   'request:respond': (p: z.infer<typeof RequestRespondSchema>, ack?: Ack) => void;
@@ -195,7 +210,8 @@ export type InteractResult =
   | { kind: 'inspect'; text: string; name: string }
   | { kind: 'sit'; x: number; y: number; dir: Direction }
   | { kind: 'panel'; panel: 'watch' | 'listen' | 'confession' | 'noticeboard' }
-  | { kind: 'wish' };
+  | { kind: 'wish' }
+  | { kind: 'vending' };
 
 export interface ServerToClient {
   'player:join': (p: PublicPlayer) => void;
@@ -217,6 +233,14 @@ export interface ServerToClient {
   'confession:removed': (p: { id: string }) => void;
   'confession:hearts': (p: { id: string; hearts: number }) => void;
   wish: (p: { pid: string; name: string }) => void;
+  /** someone picked something from the machine: play the drop for everyone */
+  'vend:drop': (p: { pid: string; item: string; object: number }) => void;
+  /** a paint shot: from (x, y) to (ex, ey), colour index, what it touched */
+  'paint:shot': (p: { pid: string; x: number; y: number; ex: number; ey: number; c: number; hit: 'none' | 'wall' | 'target' | 'player'; target?: number; victim?: string }) => void;
+  /** someone joined, left or got tagged or washed: the whole picture of their paint, or null when they are out */
+  'paint:state': (p: { pid: string; paint: PaintState | null }) => void;
+  /** your own target score and tag count, sent only to you */
+  'paint:score': (p: { score: number }) => void;
   kicked: (p: { reason: string }) => void;
 }
 

@@ -10,7 +10,7 @@ describe('core content pack', () => {
   });
 
   it('ships the rooms the project promises', () => {
-    for (const id of ['town-square', 'cafe', 'living-room', 'rooftop', 'garden', 'listening-room', 'tv-lounge', 'rain-room', 'confession-wall', 'quiet-nook']) {
+    for (const id of ['town-square', 'cafe', 'living-room', 'rooftop', 'garden', 'listening-room', 'tv-lounge', 'rain-room', 'confession-wall', 'quiet-nook', 'paint-yard']) {
       expect(reg.maps[id], id).toBeDefined();
     }
     expect(reg.maps['tv-lounge'].features).toContain('watch');
@@ -81,9 +81,9 @@ describe('avatars', () => {
     expect(sums.size).toBeGreaterThan(15);
   });
 
-  it('has 40 frames and mirrors the side view', () => {
+  it('has 72 frames and mirrors the side view', () => {
     const f = renderAvatarFrames(randomAvatar(reg.avatar, 3), reg.avatar);
-    expect(Object.keys(f)).toHaveLength(40);
+    expect(Object.keys(f)).toHaveLength(72);
     expect(f['right-idle0'].checksum()).toBe(f['left-idle0'].flippedX().checksum());
   });
 

@@ -16,6 +16,15 @@ import {
 import { TokenBucket } from '../safety/rateLimit';
 import type { MoveState } from './movement';
 
+export interface PaintPlayer {
+  /** index into the paint colours */
+  c: number;
+  /** colour tags on them: colour, where on the body, and when it was made */
+  splats: { c: number; ox: number; oy: number; at: number }[];
+  score: number;
+  lastShotAt: number;
+}
+
 export interface Player {
   pid: string;
   sid: string; // socket id
@@ -34,12 +43,16 @@ export interface Player {
   /** server time of the last accepted move */
   moveT: number;
   dirty: boolean;
+  /** server time of the last vending machine pick */
+  vendAt: number;
+  /** present only while they have joined the paintball yard */
+  paint: PaintPlayer | null;
   blocks: Set<string>;
   /** silenced by the room host or a guide */
   silenced: boolean;
   joinedAt: number;
   instance: Instance | null;
-  buckets: { move: TokenBucket; chat: TokenBucket; req: TokenBucket; emote: TokenBucket; activity: TokenBucket; media: TokenBucket; any: TokenBucket; report: TokenBucket; room: TokenBucket; join: TokenBucket };
+  buckets: { move: TokenBucket; chat: TokenBucket; req: TokenBucket; emote: TokenBucket; activity: TokenBucket; media: TokenBucket; any: TokenBucket; report: TokenBucket; room: TokenBucket; join: TokenBucket; vend: TokenBucket; paint: TokenBucket };
   abuse: number;
 }
 
@@ -127,6 +140,7 @@ export class Instance {
       dir: p.dir,
       flags: p.flags,
       role: p.moderator ? 'guide' : p.pid === this.hostPid ? 'host' : 'player',
+      ...(p.paint ? { paint: { c: p.paint.c, splats: p.paint.splats.map((x): [number, number, number] => [x.c, x.ox, x.oy]) } } : {}),
     };
   }
 

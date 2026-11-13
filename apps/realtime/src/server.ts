@@ -13,6 +13,21 @@ import {
   DIR_INDEX,
   ActivitySchema,
   STRETCH_MS,
+  PAINT_COLORS,
+  PAINT_FIRE_GAP_MS,
+  PAINT_MAX_SPLATS,
+  PAINT_SPLAT_MS,
+  PaintFireSchema,
+  VendBuySchema,
+  VEND_GAP_MS,
+  heldKind,
+  inZone,
+  paintTargets,
+  paintZone,
+  splatSpot,
+  traceShot,
+  vendBlocked,
+  vendItem,
   activityBits,
   activityBlocked,
   activityOf,
@@ -303,6 +318,7 @@ export function createRealtime(cfg: Config, overrides: { store?: Store; voice?: 
     p.dir = 'down';
     p.flags = 0;
     p.actUntil = 0;
+    p.paint = null;
     p.moveT = Date.now();
     p.dirty = false;
     p.silenced = false;
@@ -357,6 +373,20 @@ export function createRealtime(cfg: Config, overrides: { store?: Store; voice?: 
   /** Sends one player's place and pose to the room right away and reliably, so a change of pose is never lost like a walking step can be. */
   function pushState(inst: Instance, p: Player) {
     toRoom(inst, 'world:state', [[p.pid, Math.round(p.x * 10) / 10, Math.round(p.y * 10) / 10, DIR_INDEX[p.dir], p.flags]]);
+  }
+
+  function paintView(p: Player) {
+    return p.paint ? { c: p.paint.c, splats: p.paint.splats.map((x): [number, number, number] => [x.c, x.ox, x.oy]) } : null;
+  }
+
+  function broadcastPaint(inst: Instance, p: Player) {
+    toVisible(inst, p, 'paint:state', { pid: p.pid, paint: paintView(p) });
+  }
+
+  function leavePaint(inst: Instance, p: Player) {
+    p.paint = null;
+    broadcastPaint(inst, p);
+    send(p.sid, 'paint:score', { score: 0 });
   }
 
   /** Moves a player to another instance and tells them to rebuild the scene. */
@@ -481,6 +511,8 @@ export function createRealtime(cfg: Config, overrides: { store?: Store; voice?: 
             actUntil: 0,
             moveT: Date.now(),
             dirty: false,
+            vendAt: 0,
+            paint: null,
             blocks,
             silenced: false,
             joinedAt: Date.now(),
@@ -497,6 +529,8 @@ export function createRealtime(cfg: Config, overrides: { store?: Store; voice?: 
               report: new TokenBucket(3, 1 / 40),
               room: new TokenBucket(3, 0.1),
               join: new TokenBucket(3, 0.2),
+              vend: new TokenBucket(3, 0.5),
+              paint: new TokenBucket(6, 3),
             },
           };
           sessions.set(socket.id, p);
@@ -550,6 +584,8 @@ export function createRealtime(cfg: Config, overrides: { store?: Store; voice?: 
       p.actUntil = 0;
       p.moveT = now;
       p.dirty = true;
+      // walking out of the yard puts the marker down and washes the colour off
+      if (p.paint && !inZone(paintZone(inst.map), p.x, p.y)) leavePaint(inst, p);
     });
 
     // ------------------------------------------------------------- activities
@@ -577,6 +613,113 @@ export function createRealtime(cfg: Config, overrides: { store?: Store; voice?: 
       p.dirty = false;
       pushState(inst, p);
       ack({ ok: true, flags: p.flags });
+    });
+
+    // ------------------------------------------------------------- vending machine
+
+    on(socket, 'vend:buy', VendBuySchema, 'vend', (p, d, ack) => {
+      const inst = p.instance;
+      if (!inst) return ack(fail('Not in a room.'));
+      const placement = inst.map.objects[d.object];
+      const def = placement && reg.furniture[placement.furniture];
+      if (!placement || def?.interaction?.kind !== 'vend') return ack(fail('Nothing to do there.'));
+      const box = { x: placement.at[0], y: placement.at[1], w: def.size[0], h: def.size[1] };
+      if (distToRect(p, box) > REACH_PX) return ack(fail('Walk a little closer.'));
+      const now = Date.now();
+      const why = vendBlocked(d.item, (p.flags & FLAG_SEATED) !== 0, p.vendAt, now);
+      if (why) return ack(fail(why));
+      const item = vendItem(d.item);
+      if (!item) return ack(fail('The machine does not have that.'));
+      p.vendAt = now;
+      p.dir = 'up';
+      p.flags = activityBits(item.id as never);
+      // a snack or a drink is finished after a while, by itself
+      p.actUntil = now + (heldKind(item.id) === 'snack' ? 30_000 : 45_000);
+      p.moveT = now;
+      p.dirty = false;
+      toRoom(inst, 'vend:drop', { pid: p.pid, item: item.id, object: d.object });
+      pushState(inst, p);
+      ack({ ok: true, flags: p.flags });
+    });
+
+    // ------------------------------------------------------------- paintball
+
+    on(socket, 'paint:join', null, 'paint', (p, _d, ack) => {
+      const inst = p.instance;
+      if (!inst) return ack(fail('Not in a room.'));
+      const zone = paintZone(inst.map);
+      if (!zone) return ack(fail('There is no paint yard here.'));
+      if (!inZone(zone, p.x, p.y)) return ack(fail('Step onto the yard boards first.'));
+      if (p.paint) return ack({ ok: true, c: p.paint.c });
+      if ((p.flags & FLAG_SEATED) !== 0) return ack(fail('Stand up first.'));
+      const used = new Set([...inst.players.values()].filter((o) => o.paint).map((o) => (o.paint as NonNullable<Player['paint']>).c));
+      let c = 0;
+      while (used.has(c) && c < PAINT_COLORS.length - 1) c++;
+      if (used.has(c)) c = Math.floor(Math.random() * PAINT_COLORS.length);
+      p.paint = { c, splats: [], score: 0, lastShotAt: 0 };
+      // food and drink are put away; the marker needs both hands
+      if (activityOf(p.flags)) {
+        p.flags = withoutActivity(p.flags);
+        p.actUntil = 0;
+        pushState(inst, p);
+      }
+      broadcastPaint(inst, p);
+      send(p.sid, 'paint:score', { score: 0 });
+      ack({ ok: true, c });
+    });
+
+    on(socket, 'paint:leave', null, 'paint', (p, _d, ack) => {
+      const inst = p.instance;
+      if (inst && p.paint) leavePaint(inst, p);
+      ack({ ok: true });
+    });
+
+    on(socket, 'paint:wash', null, 'paint', (p, _d, ack) => {
+      const inst = p.instance;
+      if (!inst || !p.paint) return ack(fail('Join the paint yard first.'));
+      p.paint.splats = [];
+      broadcastPaint(inst, p);
+      ack({ ok: true });
+    });
+
+    on(socket, 'paint:fire', PaintFireSchema, 'paint', (p, d, ack) => {
+      const inst = p.instance;
+      if (!inst) return ack(fail('Not in a room.'));
+      const me = p.paint;
+      if (!me) return ack(fail('Join the paint yard first.'));
+      const zone = paintZone(inst.map);
+      if (!inZone(zone, p.x, p.y)) return ack(fail('Stay on the yard boards to play.'));
+      const now = Date.now();
+      if (now - me.lastShotAt < PAINT_FIRE_GAP_MS * 0.8) return ack(fail('Easy, the marker needs a moment.'));
+      me.lastShotAt = now;
+      const others = [...inst.players.values()].filter((o) => o !== p && o.paint && inZone(zone, o.x, o.y) && !hides(p, o));
+      const shot = traceShot(
+        { map: inst.collision, targets: paintTargets(inst.map), players: others.map((o) => ({ pid: o.pid, x: o.x, y: o.y })) },
+        p.pid,
+        p.x,
+        p.y,
+        d.a,
+      );
+      const origin = { x: Math.round(p.x * 10) / 10, y: Math.round((p.y - 9) * 10) / 10 };
+      const ev = { pid: p.pid, x: origin.x, y: origin.y, ex: Math.round(shot.x * 10) / 10, ey: Math.round(shot.y * 10) / 10, c: me.c, hit: shot.hit.kind } as Parameters<ServerToClient['paint:shot']>[0];
+      if (shot.hit.kind === 'target') {
+        ev.target = shot.hit.index;
+        me.score++;
+        send(p.sid, 'paint:score', { score: me.score });
+      }
+      if (shot.hit.kind === 'player') {
+        const hitPid = shot.hit.pid;
+        const victim = others.find((o) => o.pid === hitPid);
+        if (victim?.paint) {
+          ev.victim = victim.pid;
+          const [ox, oy] = splatSpot(shot.x, shot.y, victim.x, victim.y, now);
+          victim.paint.splats.push({ c: me.c, ox, oy, at: now });
+          while (victim.paint.splats.length > PAINT_MAX_SPLATS) victim.paint.splats.shift();
+          broadcastPaint(inst, victim);
+        }
+      }
+      toVisible(inst, p, 'paint:shot', ev);
+      ack({ ok: true, score: me.score });
     });
 
     // ------------------------------------------------------------- chat
@@ -668,6 +811,9 @@ export function createRealtime(cfg: Config, overrides: { store?: Store; voice?: 
         case 'panel':
           if ((it.panel === 'watch' || it.panel === 'listen' || it.panel === 'confession') && !inst.map.features.includes(it.panel)) return ack(fail('Nothing is playing in this room.'));
           result = { kind: 'panel', panel: it.panel };
+          break;
+        case 'vend':
+          result = { kind: 'vending' };
           break;
         case 'sit': {
           const { x: sx, y: sy } = seatPoint(def, placement.at, p.x);
@@ -1005,6 +1151,11 @@ export function createRealtime(cfg: Config, overrides: { store?: Store; voice?: 
           p.actUntil = 0;
           p.flags = withoutActivity(p.flags);
           pushState(inst, p);
+        }
+        if (p.paint && p.paint.splats.length && p.paint.splats[0].at + PAINT_SPLAT_MS <= nowMs) {
+          // old colour tags wash off by themselves
+          p.paint.splats = p.paint.splats.filter((x) => x.at + PAINT_SPLAT_MS > nowMs);
+          broadcastPaint(inst, p);
         }
         if (!p.dirty) continue;
         p.dirty = false;

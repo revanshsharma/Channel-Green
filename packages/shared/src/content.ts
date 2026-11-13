@@ -85,6 +85,7 @@ export const InteractionSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('sit'), dir: z.enum(['down', 'up', 'left', 'right']).optional() }),
   z.object({ kind: z.literal('panel'), panel: z.enum(['watch', 'listen', 'confession', 'noticeboard']) }),
   z.object({ kind: z.literal('wish') }),
+  z.object({ kind: z.literal('vend') }),
 ]);
 export type InteractionDef = z.infer<typeof InteractionSchema>;
 
@@ -164,6 +165,8 @@ export const MapSchema = z.object({
   tiles: z.object({ legend: z.record(z.string().length(1), id), rows: z.array(z.string()).min(4).max(64) }),
   objects: z.array(PlacementSchema).max(300).default([]),
   portals: z.array(PortalSchema).max(16).default([]),
+  /** Marked areas with their own rules, such as the paintball yard. */
+  zones: z.array(z.object({ id, kind: z.enum(['paint']), rect: z.tuple([z.number().int(), z.number().int(), z.number().int().positive(), z.number().int().positive()]), label: text(40).optional() })).max(4).default([]),
   spawns: z.record(z.string(), z.tuple([z.number().int(), z.number().int()])),
   effects: z.array(EffectSchema).max(8).default([]),
 });

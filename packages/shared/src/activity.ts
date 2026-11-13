@@ -3,12 +3,17 @@
  * every client turns the same few bits in the `flags` of a position update into the same pictures.
  */
 
-export const ACTIVITIES = ['tea', 'lie', 'stretch'] as const;
+/** What a person can ask for themselves. */
+export const OWN_ACTIVITIES = ['tea', 'lie', 'stretch'] as const;
+/** Things from the vending machine; they are only ever handed out by the server after a pick at the machine. */
+export const VENDED = ['chips', 'choc', 'cookie', 'cola', 'lemon', 'orange', 'icetea'] as const;
+export const ACTIVITIES = [...OWN_ACTIVITIES, ...VENDED] as const;
 export type ActivityId = (typeof ACTIVITIES)[number];
+export type VendedId = (typeof VENDED)[number];
 
-/** The first two bits of `flags` are moving and seated; the next three hold the activity number. */
+/** The first two bits of `flags` are moving and seated; the next four hold the activity number. */
 export const ACTIVITY_SHIFT = 2;
-export const ACTIVITY_MASK = 0b111 << ACTIVITY_SHIFT;
+export const ACTIVITY_MASK = 0b1111 << ACTIVITY_SHIFT;
 /** A stretch ends by itself after this long (ms). */
 export const STRETCH_MS = 3200;
 
@@ -17,7 +22,26 @@ export const ACTIVITY_INFO: Record<ActivityId, { label: string; stop: string; ke
   tea: { label: 'Tea', stop: 'Put the cup down', key: 'T' },
   lie: { label: 'Lie down', stop: 'Get up', key: 'L' },
   stretch: { label: 'Stretch', stop: 'Stop stretching', key: 'X' },
+  chips: { label: 'Chips', stop: 'Put the chips away', key: '' },
+  choc: { label: 'Chocolate bar', stop: 'Put the chocolate away', key: '' },
+  cookie: { label: 'Cookies', stop: 'Put the cookies away', key: '' },
+  cola: { label: 'Cola', stop: 'Put the can down', key: '' },
+  lemon: { label: 'Lemon soda', stop: 'Put the can down', key: '' },
+  orange: { label: 'Orange soda', stop: 'Put the can down', key: '' },
+  icetea: { label: 'Iced tea', stop: 'Put the bottle down', key: '' },
 };
+
+export function isVended(id: ActivityId | string | null): id is VendedId {
+  return !!id && (VENDED as readonly string[]).includes(id);
+}
+
+/** What kind of thing is in your hands: a cup of tea, a snack being eaten, or a soda being sipped. */
+export function heldKind(id: ActivityId | null): 'tea' | 'snack' | 'soda' | null {
+  if (id === 'tea') return 'tea';
+  if (id === 'chips' || id === 'choc' || id === 'cookie') return 'snack';
+  if (isVended(id)) return 'soda';
+  return null;
+}
 
 export function activityOf(flags: number): ActivityId | null {
   const n = (flags & ACTIVITY_MASK) >> ACTIVITY_SHIFT;
@@ -35,6 +59,7 @@ export function withoutActivity(flags: number): number {
 
 /** Tea can be had standing or seated, lying down and stretching need you on your feet. Returns a short reason when it is not possible. */
 export function activityBlocked(id: ActivityId, seated: boolean): string | null {
+  if (isVended(id)) return 'Get that from the vending machine.';
   if (seated && id !== 'tea') return id === 'lie' ? 'Stand up first, then lie down.' : 'Stand up first, then stretch.';
   return null;
 }
@@ -59,8 +84,31 @@ export function teaStep(t: number, phase: number, reduce: boolean): 0 | 1 | 2 {
   return 0;
 }
 
-export function teaFrame(t: number, phase: number, reduce: boolean, seated: boolean): TeaFrame {
-  const n = teaStep(t, phase, reduce);
+/** Snacks: bring it up, chew with eyes closed, a pause, another bite. Faster than tea. */
+export function biteStep(t: number, phase: number, reduce: boolean): 0 | 1 | 2 {
+  if (reduce) return 0;
+  const u = (t + phase) % 4200;
+  if (u < 1300) return 0;
+  if (u < 1800) return 1;
+  if (u < 2900) return 2;
+  if (u < 3300) return 1;
+  return 0;
+}
+
+/** Soda: a good long swig now and then. */
+export function sodaStep(t: number, phase: number, reduce: boolean): 0 | 1 | 2 {
+  if (reduce) return 0;
+  const u = (t + phase) % 6000;
+  if (u < 2800) return 0;
+  if (u < 3300) return 1;
+  if (u < 4300) return 2;
+  if (u < 4800) return 1;
+  return 0;
+}
+
+export function teaFrame(t: number, phase: number, reduce: boolean, seated: boolean, id: ActivityId | null = 'tea'): TeaFrame {
+  const kind = heldKind(id);
+  const n = kind === 'snack' ? biteStep(t, phase, reduce) : kind === 'soda' ? sodaStep(t, phase, reduce) : teaStep(t, phase, reduce);
   return `${seated ? 's' : ''}cup${n}` as TeaFrame;
 }
 
