@@ -1123,9 +1123,9 @@ export class WorldScene extends Phaser.Scene {
 
       let frame: string;
       if (a.lieK > 0) frame = 'sit0';
-      else if (a.sitK >= 0.5) frame = a.sitK >= 1 ? (a.act === 'tea' && !a.moving ? teaFrame(time, a.phase, this.reduce, true) : seatedFrame(time, a.phase, this.reduce)) : 'sit0';
+      else if (a.sitK >= 0.5) frame = a.sitK >= 1 ? (heldKind(a.act) && !a.moving ? teaFrame(time, a.phase, this.reduce, true, a.act) : seatedFrame(time, a.phase, this.reduce)) : 'sit0';
       else if (a.moving) frame = `walk${Math.floor(time / 125) % 4}`;
-      else if (a.act === 'tea') frame = teaFrame(time, a.phase, this.reduce, false);
+      else if (heldKind(a.act)) frame = teaFrame(time, a.phase, this.reduce, false, a.act);
       else if (a.act === 'stretch') frame = stretchFrame(time - a.actAt, this.reduce);
       else frame = `idle${Math.floor(time / 600) % 2}`;
       const x = Math.round(a.x);

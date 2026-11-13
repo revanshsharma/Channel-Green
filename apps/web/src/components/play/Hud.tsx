@@ -187,7 +187,7 @@ export function Hud({ controls }: { controls: Controls }) {
       <div className="pointer-events-none absolute bottom-0 left-0 z-20 flex w-full flex-col items-center gap-2 p-2">
         <div aria-live="polite" className="flex flex-col items-center gap-1">
           {s.vendOpen && (
-        <div className="pointer-events-none fixed inset-x-0 top-14 z-40 flex justify-center">
+        <div className="pointer-events-none fixed left-2 top-20 z-40 flex justify-start">
           <div className="panel pointer-events-auto w-[min(360px,calc(100vw-1rem))] p-3" role="dialog" aria-label="Vending machine" data-testid="vend-menu">
             <div className="mb-2 flex items-center justify-between">
               <h2 className="font-pixel text-neon">Vending machine</h2>
