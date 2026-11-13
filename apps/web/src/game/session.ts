@@ -4,6 +4,9 @@ import {
   activityBlocked,
   activityOf,
   type ActivityId,
+  type PaintState,
+  type ServerToClient,
+  vendItem,
   INDEX_DIR,
   LIMITS,
   type ChatMessage,
@@ -58,8 +61,16 @@ export interface Snapshot {
   seated: boolean;
   /** what you are doing right now where you stand (sipping tea, lying down, stretching), if anything */
   activity: ActivityId | null;
+  /** the vending machine menu is open */
+  vendOpen: boolean;
+  /** the paint yard: whether you stand on the yard boards, have joined, your colour, your target score and the colour tags on you */
+  paint: { inYard: boolean; joined: boolean; c: number; score: number; tags: number };
   selected: string | null;
 }
+
+export const NO_PAINT = { inYard: false, joined: false, c: 0, score: 0, tags: 0 };
+
+export type ShotEvent = Parameters<ServerToClient['paint:shot']>[0];
 
 /** Things the Phaser scene listens for. Position updates never go through React. */
 export type SceneEvent =
@@ -73,6 +84,9 @@ export type SceneEvent =
   | { type: 'wish'; pid: string }
   | { type: 'correct'; x: number; y: number }
   | { type: 'activity'; activity: ActivityId | null }
+  | { type: 'vend'; pid: string; item: string; object: number }
+  | { type: 'shot'; shot: ShotEvent }
+  | { type: 'paint'; pid: string }
   | { type: 'seat'; x: number; y: number; dir: 'down' | 'up' | 'left' | 'right' };
 
 const EMPTY_FEATURES: JoinOk['features'] = { voice: false, persistence: 'memory' };
@@ -117,6 +131,8 @@ export class GameSession {
       nearby: null,
       seated: false,
       activity: null,
+      vendOpen: false,
+      paint: NO_PAINT,
       selected: null,
     };
   }
@@ -231,6 +247,8 @@ export class GameSession {
       nearby: null,
       seated: false,
       activity: null,
+      vendOpen: false,
+      paint: NO_PAINT,
       selected: null,
     });
     this.refreshPlayers();
@@ -334,6 +352,17 @@ export class GameSession {
       this.emitScene({ type: 'wish', pid });
       if (pid !== this.me?.pid) this.toast(`${name} made a wish at the well.`, 'info');
     });
+    net.on('vend:drop', (d) => this.emitScene({ type: 'vend', ...d }));
+    net.on('paint:shot', (shot) => this.emitScene({ type: 'shot', shot }));
+    net.on('paint:state', ({ pid, paint }) => {
+      const p = pid === this.me?.pid ? this.me : this.players.get(pid);
+      if (!p) return;
+      if (paint) p.paint = paint;
+      else delete p.paint;
+      if (pid === this.me?.pid) this.syncPaint();
+      this.emitScene({ type: 'paint', pid });
+    });
+    net.on('paint:score', ({ score }) => this.set({ paint: { ...this.snap.paint, score } }));
     net.on('kicked', ({ reason }) => {
       this.set({ status: 'kicked', error: reason });
       net.disconnect();
@@ -412,6 +441,51 @@ export class GameSession {
     }
   }
 
+  /** Your own paint colour and tags, copied into the snapshot the buttons read. */
+  private syncPaint() {
+    const mine: PaintState | undefined = this.me?.paint;
+    this.set({ paint: { ...this.snap.paint, joined: !!mine, c: mine?.c ?? 0, tags: mine?.splats.length ?? 0, score: mine ? this.snap.paint.score : 0 } });
+  }
+  /** The scene tells us whether you stand on the yard boards. */
+  setInYard(v: boolean) {
+    if (this.snap.paint.inYard !== v) this.set({ paint: { ...this.snap.paint, inYard: v } });
+  }
+  closeVend() {
+    if (this.snap.vendOpen) this.set({ vendOpen: false });
+  }
+  /** Pick something from the machine. It drops, and then you eat or sip it where you stand. */
+  async vend(item: string) {
+    const it = vendItem(item);
+    if (!it) return;
+    const obj = this.vendObject;
+    if (obj < 0) return;
+    this.set({ vendOpen: false });
+    const r = await this.act<{ flags: number }>('vend:buy', { object: obj, item });
+    if (!r) return;
+    const now = activityOf(r.flags);
+    if (this.me) this.me.flags = r.flags;
+    this.setActivity(now);
+    this.emitScene({ type: 'activity', activity: now });
+  }
+  /** index of the machine the menu was opened at */
+  vendObject = -1;
+  async paintJoin() {
+    const r = await this.act<{ c: number }>('paint:join');
+    if (r && this.snap.activity) {
+      this.setActivity(null);
+      this.emitScene({ type: 'activity', activity: null });
+    }
+  }
+  async paintLeave() {
+    await this.act('paint:leave');
+  }
+  async paintWash() {
+    const r = await this.act('paint:wash');
+    if (r) this.toast('All washed off.', 'info');
+  }
+  paintFire(a: number) {
+    return this.act<{ score: number }>('paint:fire', { a: Math.round(a * 1000) / 1000 });
+  }
   /** Ask for an activity; asking for the one already going puts it away. 'none' always stops. */
   async doActivity(id: ActivityId | 'none') {
     const why = id === 'none' ? null : activityBlocked(id, this.snap.seated);
@@ -448,6 +522,9 @@ export class GameSession {
         this.me.flags = FLAG_SEATED | (this.snap.activity === 'tea' ? activityBits('tea') : 0);
       }
       this.emitScene({ type: 'seat', x: res.x, y: res.y, dir: res.dir });
+    } else if (res.kind === 'vending') {
+      this.vendObject = index;
+      this.set({ vendOpen: true, panel: null });
     } else if (res.kind === 'panel') {
       this.set({ panel: res.panel === 'noticeboard' ? 'noticeboard' : res.panel });
     }

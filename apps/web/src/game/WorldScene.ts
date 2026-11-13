@@ -13,12 +13,19 @@ import {
   STRETCH_MS,
   activityOf,
   cupAnchor,
+  heldKind,
   lieFrame,
   renderLyingSheet,
   stretchFrame,
   teaFrame,
   type ActivityId,
   type FrameName,
+  PAINT_FIRE_GAP_MS,
+  aimFrom,
+  inZone,
+  paintZone,
+  type Zone,
+  VEND_DROP_MS,
   TILE,
   approach,
   findSeat,
@@ -42,6 +49,8 @@ import { bufToCanvas, furnitureCanvas, renderGround } from '@/lib/art';
 import { registry } from '@/lib/registry';
 import type { GameSession, SceneEvent } from './session';
 import type { Controls } from './controls';
+import { audio } from './audio';
+import { PaintFx } from './paintFx';
 import { moodFor, type GradeStop, type Mood } from './mood';
 
 type Obj = Phaser.GameObjects.GameObject;
@@ -135,6 +144,16 @@ export class WorldScene extends Phaser.Scene {
   private ready = false;
   private pendingJoin: JoinOk | null = null;
   private reduce = false;
+  private paintFx!: PaintFx;
+  private zone: Zone | null = null;
+  private aimAngle = 0;
+  private lastFire = 0;
+  private lastTap = -9999;
+  private nearVend = false;
+  private pointerSeen = false;
+  private touchPoint = { x: 0, y: 0 };
+  /** pictures of an activity stay hidden until the snack has dropped (ms timestamps by player) */
+  private holdUntil = new Map<string, number>();
 
   constructor() {
     super('world');
@@ -152,12 +171,32 @@ export class WorldScene extends Phaser.Scene {
     this.fit();
     this.prompt = this.add.text(0, 0, '', { fontFamily: FONT, fontSize: '8px', color: '#faf5e8', backgroundColor: '#14301fcc', padding: { x: 3, y: 1 } }).setOrigin(0.5, 1).setDepth(99999).setVisible(false);
     this.prompt.setResolution(this.textRes());
+    this.paintFx = new PaintFx(this, () => this.reduce, () => this.textRes());
     this.unsub = this.session.onScene((e) => this.onEvent(e));
     this.controls.onAction = () => this.act();
+    this.controls.onPaint = (what) => {
+      if (!this.ready || !this.map) return;
+      if (what === 'toggle') void this.togglePaint();
+      else this.fire(this.aimAngle);
+    };
+    this.controls.onEscape = () => this.session.closeVend();
     this.controls.onActivity = (id) => {
       if (this.ready && this.map && !this.seatGlide) void this.session.doActivity(id);
     };
     this.input.on('pointerdown', (p: Phaser.Input.Pointer, over: Obj[]) => {
+      // in the yard a click or tap is a shot, wherever it lands
+      if (this.playing()) {
+        const w = this.cameras.main.getWorldPoint(p.x, p.y);
+        const o = aimFrom(this.myX, this.myY);
+        this.aimAngle = Math.atan2(w.y - o.y, w.x - o.x);
+        this.pointerSeen = true;
+        if (p.wasTouch) {
+          this.lastTap = this.time.now;
+          this.touchPoint = { x: w.x, y: w.y };
+        }
+        this.fire(this.aimAngle);
+        return;
+      }
       if (over.length) return;
       this.session.select(null);
       void p;
@@ -189,6 +228,9 @@ export class WorldScene extends Phaser.Scene {
     this.unsub?.();
     this.controls.onAction = null;
     this.controls.onActivity = null;
+    this.controls.onPaint = null;
+    this.controls.onEscape = null;
+    this.paintFx.destroy();
   }
 
   /** Change what you are doing. Stopping is also told to the server so everyone else sees it end. */
@@ -255,6 +297,22 @@ export class WorldScene extends Phaser.Scene {
       case 'wish':
         this.showGlyph(e.pid, '🌠');
         break;
+      case 'vend': {
+        const o = this.map?.objects[e.object];
+        const def = o && registry.furniture[o.furniture];
+        if (o && def) this.paintFx.drop(e.item, o.at, def.size);
+        this.holdUntil.set(e.pid, this.time.now + VEND_DROP_MS);
+        if (e.pid === this.session.me?.pid) this.myDir = 'down';
+        break;
+      }
+      case 'shot': {
+        const a = e.shot.victim ? this.avatars.get(e.shot.victim) : undefined;
+        this.paintFx.shot(e.shot, a ? { sprite: a.sprite, x: a.x, y: a.y } : null);
+        if (e.shot.hit === 'target' && e.shot.pid === this.session.me?.pid) audio().blip('heart');
+        break;
+      }
+      case 'paint':
+        break;
       case 'correct':
         this.myX = e.x;
         this.myY = e.y;
@@ -291,6 +349,8 @@ export class WorldScene extends Phaser.Scene {
     this.avatars.forEach((a) => this.destroyAvatar(a));
     this.avatars.clear();
     this.fx = [];
+    this.paintFx?.reset(null);
+    this.holdUntil.clear();
   }
 
   private track<T extends Obj>(o: T): T {
@@ -304,6 +364,8 @@ export class WorldScene extends Phaser.Scene {
     if (!map) return;
     this.map = map;
     this.col = buildCollisionMap(map, registry);
+    this.zone = paintZone(map);
+    this.paintFx.reset(map);
     const key = `ground:${map.id}`;
     if (!this.textures.exists(key)) this.textures.addCanvas(key, renderGround(map, registry));
     this.track(this.add.image(0, 0, key).setOrigin(0, 0).setDepth(-100000));
@@ -321,6 +383,15 @@ export class WorldScene extends Phaser.Scene {
       const img = this.track(this.add.image(o.at[0], o.at[1], tk).setOrigin(0, 0));
       img.setDepth(def.flat ? -50000 + o.at[1] : o.at[1] + def.size[1] + (o.depth ?? 0));
       this.animateFurniture(img, def, i);
+      this.paintFx.registerObject(i, img);
+      if (def.interaction?.kind === 'vend') {
+        // click or tap the machine as well as pressing E
+        img.setInteractive({ useHandCursor: true, pixelPerfect: false });
+        img.on('pointerdown', () => {
+          if (this.nearIndex === i) void this.session.interact(i);
+          else this.session.toast('Walk up to the machine first.', 'info');
+        });
+      }
       if (def.light) this.addLight(o.at[0] + def.light.x, o.at[1] + def.light.y, def);
     });
 
@@ -643,7 +714,9 @@ export class WorldScene extends Phaser.Scene {
     const sprite = this.add.sprite(p.x, p.y, texKey, `${p.dir}-idle0`).setOrigin(0.5, 1 - 1 / FRAME_H);
     if (!isMe) {
       sprite.setInteractive({ useHandCursor: true });
-      sprite.on('pointerdown', () => this.session.select(p.pid));
+      sprite.on('pointerdown', () => {
+        if (!this.playing()) this.session.select(p.pid);
+      });
     }
     const name = this.add
       .text(p.x, p.y - FRAME_H - 1, p.name, { fontFamily: FONT, fontSize: '7px', color: isMe ? '#9dff6a' : '#faf5e8', stroke: '#0b1f15', strokeThickness: 2 })
@@ -682,6 +755,7 @@ export class WorldScene extends Phaser.Scene {
     a.glyph?.destroy();
     a.glow?.destroy();
     a.steam?.forEach((r) => r.destroy());
+    this.paintFx.forget(a.pid);
   }
 
   private removeAvatar(pid: string) {
@@ -752,6 +826,59 @@ export class WorldScene extends Phaser.Scene {
     else if (this.nearIndex >= 0) void this.session.interact(this.nearIndex);
   }
 
+  // ------------------------------------------------------------------ paint yard
+
+  /** True while you have joined the yard and stand on its boards. */
+  private playing(): boolean {
+    return !!this.session.me?.paint && inZone(this.zone, this.myX, this.myY);
+  }
+
+  async togglePaint() {
+    const s = this.session;
+    if (s.me?.paint) await s.paintLeave();
+    else if (!this.zone) s.toast('There is no paint yard here. Look for the Paint Yard door in the town square.', 'info');
+    else if (!inZone(this.zone, this.myX, this.myY)) s.toast('Step onto the yard boards, then press P to join.', 'info');
+    else if (this.seated) s.toast('Stand up first.', 'info');
+    else await s.paintJoin();
+  }
+
+  private fire(angle: number) {
+    if (!this.playing()) return;
+    const now = this.time.now;
+    if (now - this.lastFire < PAINT_FIRE_GAP_MS) return;
+    this.lastFire = now;
+    void this.session.paintFire(angle);
+  }
+
+  /** Aim line, crosshair and the cursor, every frame. */
+  private updatePaint(time: number) {
+    const inYard = inZone(this.zone, this.myX, this.myY);
+    this.session.setInYard(inYard);
+    const me = this.session.me;
+    const on = !!me?.paint && inYard && !this.seated;
+    const ptr = this.input.activePointer;
+    const touch = ptr.wasTouch;
+    const o = aimFrom(this.myX, this.myY);
+    let point: { x: number; y: number } | null = null;
+    if (on && (!touch || time - this.lastTap < 2500) && (touch ? true : this.pointerSeen)) {
+      const w = this.cameras.main.getWorldPoint(ptr.x, ptr.y);
+      point = touch ? this.touchPoint : { x: w.x, y: w.y };
+      if (!touch) this.aimAngle = Math.atan2(w.y - o.y, w.x - o.x);
+    } else if (on && !touch && !this.pointerSeen) {
+      this.aimAngle = this.myDir === 'left' ? Math.PI : this.myDir === 'up' ? -Math.PI / 2 : this.myDir === 'down' ? Math.PI / 2 : 0;
+    }
+    if (on && touch && point === null && time - this.lastTap >= 2500) {
+      // nothing tapped lately: keep the line short and quiet by hiding it
+    }
+    const others: { pid: string; x: number; y: number }[] = [];
+    for (const a of this.avatars.values()) if (a.pid !== me?.pid && this.session.players.get(a.pid)?.paint) others.push({ pid: a.pid, x: a.x, y: a.y });
+    const show = on && (!touch || time - this.lastTap < 2500);
+    if (this.col) this.paintFx.drawAim(show, me?.paint?.c ?? 0, { x: this.myX, y: this.myY }, this.aimAngle, show ? point : null, this.col, others, time);
+    this.input.setDefaultCursor(on && !touch ? 'crosshair' : '');
+    // the vending menu closes when you walk away from the machine
+    if (this.session.getSnapshot().vendOpen && !this.nearVend) this.session.closeVend();
+  }
+
   /** The way you are looking, as a step; getting up goes that way first. */
   private facingVector(): [number, number] {
     return this.myDir === 'left' ? [-1, 0] : this.myDir === 'right' ? [1, 0] : this.myDir === 'up' ? [0, -1] : [0, 1];
@@ -776,11 +903,13 @@ export class WorldScene extends Phaser.Scene {
     }
     this.stepAvatars(time, Math.min(delta, 250) / 1000);
     this.fx.forEach((f) => f(time, delta));
+    this.updatePaint(time);
 
     // prompts: doors first, then things
     const portal = portalAt(this.col, this.myX, this.myY);
     const near = this.seated ? null : this.nearestObject();
     this.nearIndex = near?.index ?? -1;
+    this.nearVend = !!near && registry.furniture[this.map.objects[near.index].furniture]?.interaction?.kind === 'vend';
     const pad = this.col.portals.find((p) => Math.hypot(p.px.x + p.px.w / 2 - this.myX, p.px.y + p.px.h / 2 - this.myY) < 22);
     this.nearPortal = pad?.id ?? '';
     const lying = this.activity === 'lie';
@@ -959,7 +1088,10 @@ export class WorldScene extends Phaser.Scene {
       } else if (this.seated && !a.seat) a.seat = findSeat(this.map, registry.furniture, this.seatGlide?.x ?? this.myX, this.seatGlide?.y ?? this.myY);
 
       // what they are doing: yours is known here, theirs comes with their position
-      const act = mine ? this.activity : theirAct;
+      const act0 = mine ? this.activity : theirAct;
+      const act = (this.holdUntil.get(a.pid) ?? 0) > time ? null : act0;
+      // a snack or a drink is finished after a while; the server has already put it away
+      if (mine && heldKind(act) && heldKind(act) !== 'tea' && time - a.actAt > (heldKind(act) === 'snack' ? 30_000 : 45_000)) this.setMyActivity(null);
       if (act !== a.act) {
         a.act = act;
         a.actAt = time;
@@ -1013,6 +1145,9 @@ export class WorldScene extends Phaser.Scene {
         a.sprite.setPosition(x, sy).setFrame(`${a.dir}-${frame}`).setDepth(depth);
       }
       this.updateSteam(a, time, x, sy, frame, depth);
+      this.updateHeld(a, x, sy, frame, depth);
+      const p0 = mine ? this.session.me?.paint : this.session.players.get(a.pid)?.paint;
+      this.paintFx.person(a.pid, x, y, depth, a.dir, p0, mine && p0 && this.playing() ? this.aimAngle : null, time);
 
       // a warm pool of light under whoever is sitting
       if (a.sitK > 0 && !a.glow) {
@@ -1049,6 +1184,19 @@ export class WorldScene extends Phaser.Scene {
         }
       }
     }
+  }
+
+  /** A snack or a can in someone's hands, where the cup would be. */
+  private updateHeld(a: Avatar, x: number, y: number, frame: string, depth: number) {
+    const kind = heldKind(a.act);
+    let at: { x: number; y: number } | null = null;
+    if (kind && kind !== 'tea' && !a.lyingShown && (frame.startsWith('cup') || frame.startsWith('scup'))) {
+      const key = `${a.texKey}|${frame}|${a.dir}`;
+      if (!this.anchors.has(key)) this.anchors.set(key, cupAnchor(a.look, registry.avatar, frame as FrameName, a.dir));
+      const an = this.anchors.get(key);
+      if (an) at = { x: Math.round(x - FRAME_W / 2 + an.x), y: Math.round(y - (FRAME_H - 1) + an.y) };
+    }
+    this.paintFx.holding(a.pid, a.act, at, depth);
   }
 
   /** Little wisps of steam over a cup, so a sip of tea can be seen from across the room. Still pictures only when motion is reduced. */

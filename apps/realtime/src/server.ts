@@ -631,7 +631,7 @@ export function createRealtime(cfg: Config, overrides: { store?: Store; voice?: 
       const item = vendItem(d.item);
       if (!item) return ack(fail('The machine does not have that.'));
       p.vendAt = now;
-      p.dir = 'up';
+      p.dir = 'down';
       p.flags = activityBits(item.id as never);
       // a snack or a drink is finished after a while, by itself
       p.actUntil = now + (heldKind(item.id) === 'snack' ? 30_000 : 45_000);

@@ -6,6 +6,10 @@ export class Controls {
   onAction: (() => void) | null = null;
   /** T for tea, L to lie down, X to stretch (pressing the same one again puts it away) */
   onActivity: ((id: 'tea' | 'lie' | 'stretch') => void) | null = null;
+  /** P joins or leaves the paint yard, F fires the marker */
+  onPaint: ((what: 'toggle' | 'fire') => void) | null = null;
+  /** Escape closes the vending menu */
+  onEscape: (() => void) | null = null;
   constructor() {
     const editing = (t: EventTarget | null) => {
       const el = t as HTMLElement | null;
@@ -20,6 +24,9 @@ export class Controls {
         if (k === 't') this.onActivity?.('tea');
         else if (k === 'l') this.onActivity?.('lie');
         else if (k === 'x') this.onActivity?.('stretch');
+        else if (k === 'p') this.onPaint?.('toggle');
+        else if (k === 'f') this.onPaint?.('fire');
+        else if (k === 'escape') this.onEscape?.();
       }
       this.keys.add(k);
     };
