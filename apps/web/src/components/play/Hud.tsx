@@ -1,7 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { ACTIVITIES, ACTIVITY_INFO } from '@channel-green/shared';
+import { OWN_ACTIVITIES, ACTIVITY_INFO, PAINT_COLORS, PAINT_NAMES, VEND_LIST, heldKind } from '@channel-green/shared';
 import { registry } from '@/lib/registry';
 import { audio } from '@/game/audio';
 import type { Controls } from '@/game/controls';
@@ -186,7 +186,31 @@ export function Hud({ controls }: { controls: Controls }) {
 
       <div className="pointer-events-none absolute bottom-0 left-0 z-20 flex w-full flex-col items-center gap-2 p-2">
         <div aria-live="polite" className="flex flex-col items-center gap-1">
-          {s.toasts.map((t) => (
+          {s.vendOpen && (
+        <div className="pointer-events-none fixed inset-x-0 top-14 z-40 flex justify-center">
+          <div className="panel pointer-events-auto w-[min(360px,calc(100vw-1rem))] p-3" role="dialog" aria-label="Vending machine" data-testid="vend-menu">
+            <div className="mb-2 flex items-center justify-between">
+              <h2 className="font-pixel text-neon">Vending machine</h2>
+              <button className="btn btn-sm btn-quiet" onClick={() => game.closeVend()} aria-label="Close vending machine">x</button>
+            </div>
+            <p className="mb-2 text-xs text-olive-soft">Everything is free. Pick one.</p>
+            {(['snack', 'soda'] as const).map((kind) => (
+              <div key={kind} className="mb-2">
+                <div className="mb-1 text-xs uppercase opacity-70">{kind === 'snack' ? 'Snacks' : 'Sodas'}</div>
+                <div className="grid grid-cols-2 gap-1">
+                  {VEND_LIST.filter((i) => i.kind === kind).map((i) => (
+                    <button key={i.id} className="btn btn-sm flex items-center gap-2" data-testid={`vend-${i.id}`} onClick={() => void game.vend(i.id)}>
+                      <span className="inline-block h-3 w-3 shrink-0 rounded-sm border border-cream" style={{ background: i.color }} aria-hidden />
+                      {i.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {s.toasts.map((t) => (
             <div key={t.id} className={`panel px-3 py-1 text-sm ${t.level === 'warn' ? 'border-orange' : ''}`}>{t.text}</div>
           ))}
         </div>
@@ -196,8 +220,29 @@ export function Hud({ controls }: { controls: Controls }) {
               {s.nearby.label} <span className="hidden text-xs opacity-70 sm:inline">[E]</span>
             </button>
           )}
+          {s.activity && heldKind(s.activity) && heldKind(s.activity) !== 'tea' && (
+            <button className="btn btn-sm btn-quiet" onClick={() => void game.doActivity('none')}>Put it away [walk]</button>
+          )}
+          {s.paint.inYard && (
+            <div className="panel flex flex-wrap items-center justify-center gap-2 px-3 py-1.5 text-sm" role="group" aria-label="Paint yard" data-testid="paint-card">
+              {s.paint.joined ? (
+                <>
+                  <span className="inline-block h-3 w-3 rounded-sm border border-cream" style={{ background: PAINT_COLORS[s.paint.c] }} aria-hidden />
+                  <span>{PAINT_NAMES[s.paint.c]} paint. Targets hit: <strong data-testid="paint-score">{s.paint.score}</strong>. Tags on you: {s.paint.tags}</span>
+                  <button className="btn btn-sm btn-quiet" onClick={() => void game.paintWash()}>Wash off</button>
+                  <button className="btn btn-sm btn-quiet" onClick={() => void game.paintLeave()}>Leave game [P]</button>
+                  <span className="hidden text-xs opacity-70 sm:inline">Aim with the mouse, click or F to fire</span>
+                </>
+              ) : (
+                <>
+                  <span>Paint yard: play colour tag with a paintball marker.</span>
+                  <button className="btn btn-sm btn-primary" onClick={() => void game.paintJoin()}>Join [P]</button>
+                </>
+              )}
+            </div>
+          )}
           <div className="activity-bar flex flex-wrap items-center justify-center gap-1" role="group" aria-label="Things to do">
-            {ACTIVITIES.map((id) => {
+            {OWN_ACTIVITIES.map((id) => {
               const on = s.activity === id;
               const info = ACTIVITY_INFO[id];
               return (

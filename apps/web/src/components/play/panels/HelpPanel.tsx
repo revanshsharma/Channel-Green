@@ -6,6 +6,8 @@ export function HelpPanel() {
       <p><strong>Walk</strong> with WASD or the arrow keys. On a phone, use the arrows at the bottom left.</p>
       <p><strong>Interact</strong> with E, Space or the button that appears near things. Sit on benches, read signs, step onto glowing doors to go to another room.</p>
       <p><strong>Little things to do</strong> where you stand. T sips a cup of tea (standing or sitting), L lies down to rest, X stretches. Press the same key again, or walk, to stop. Everyone in the room sees it. They are also buttons above the emotes.</p>
+      <p><strong>Vending machine</strong> in the town square. Walk up, press E (or click it) and pick a snack or a soda. It is free. You eat or sip it for a little while and everyone nearby sees. Walk away to put it down.</p>
+      <p><strong>Paint yard</strong> through the Paint Yard door. Step on the boards and press P (or the Join button) to get a paintball marker. Aim with the mouse (or tap on a phone), click or press F to fire. Hit the bullseye targets for points, or give another player a coloured tag. Tags are only colour, they fade after about a minute, and the Wash off button clears them. Press P again or walk out to leave.</p>
       <p><strong>Chat</strong> by pressing Enter. Click a name to wave, hug, ask to chat, mute, block or report.</p>
       <p><strong>Emotes</strong> are the little faces at the bottom.</p>
       <p><strong>Sound</strong> is off until you turn it on. <strong>Voice and video</strong> only start after you say yes.</p>

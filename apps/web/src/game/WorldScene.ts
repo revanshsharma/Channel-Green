@@ -21,6 +21,7 @@ import {
   type ActivityId,
   type FrameName,
   PAINT_FIRE_GAP_MS,
+  paintTargets,
   aimFrom,
   inZone,
   paintZone,
@@ -210,6 +211,13 @@ export class WorldScene extends Phaser.Scene {
         size: () => ({ w: this.col?.width ?? 0, h: this.col?.height ?? 0 }),
         pos: () => ({ x: this.myX, y: this.myY }),
         portals: () => this.col?.portals.map((p) => ({ id: p.id, label: p.label, to: p.to, x: p.px.x + p.px.w / 2, y: p.px.y + p.px.h / 2 })) ?? [],
+        screen: (x: number, y: number) => {
+          const c = this.cameras.main;
+          const r = this.game.canvas.getBoundingClientRect();
+          const k = r.width / this.scale.width;
+          return { x: r.left + (x - c.worldView.x) * c.zoom * k, y: r.top + (y - c.worldView.y) * c.zoom * k };
+        },
+        yard: () => ({ zone: this.zone, targets: this.map ? paintTargets(this.map) : [], vend: this.map?.objects.filter((o) => o.furniture === 'vending-machine').map((o) => o.at) ?? [] }),
         controls: this.controls,
         session: this.session,
         looks: () => [...this.avatars.values()].map((a) => ({ pid: a.pid, act: a.act, lieK: a.lieK, tex: a.sprite.texture.key, frame: a.sprite.frame.name, steam: a.steam?.filter((r) => r.visible).length ?? 0 })),
@@ -1091,13 +1099,13 @@ export class WorldScene extends Phaser.Scene {
       const act0 = mine ? this.activity : theirAct;
       const act = (this.holdUntil.get(a.pid) ?? 0) > time ? null : act0;
       // a snack or a drink is finished after a while; the server has already put it away
-      if (mine && heldKind(act) && heldKind(act) !== 'tea' && time - a.actAt > (heldKind(act) === 'snack' ? 30_000 : 45_000)) this.setMyActivity(null);
       if (act !== a.act) {
         a.act = act;
         a.actAt = time;
         if (act === 'lie') a.lieSide = a.dir === 'right' ? 'right' : 'left';
       }
       if (mine && act === 'stretch' && time - a.actAt > STRETCH_MS + 150) this.setMyActivity(null);
+      if (mine && heldKind(act) && heldKind(act) !== 'tea' && time - a.actAt > (heldKind(act) === 'snack' ? 30_000 : 45_000)) this.setMyActivity(null);
       const wantLie = act === 'lie' && !a.seated && !a.moving && !gliding;
       if (this.reduce) a.lieK = wantLie ? 1 : 0;
       else a.lieK = Math.min(1, Math.max(0, a.lieK + (wantLie ? dt / LIE_IN : -dt / LIE_OUT)));

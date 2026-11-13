@@ -19,7 +19,6 @@ import {
   PAINT_SPLAT_MS,
   PaintFireSchema,
   VendBuySchema,
-  VEND_GAP_MS,
   heldKind,
   inZone,
   paintTargets,
